@@ -63,15 +63,19 @@ leaks, revoke it at https://myaccount.google.com/permissions and run
 
 ## Who runs the schedule
 
-Nothing schedules itself from your machine. Two options, both in the cloud:
+Both of these are live, and neither depends on your machine:
 
-- **Vercel Cron** (`vercel.json`) - simplest, but on the Hobby plan it fires at
-  most once a day, which is too coarse for a mailbox. Every two hours needs Pro.
-- **GitHub Actions** (`.github/workflows/cron.yml`) - every two hours on any
-  plan. Needs two repository secrets: `APP_URL` and `CRON_SECRET`. Runs on
-  GitHub's machines, so your laptop can be shut.
+- **GitHub Actions** - `github.com/fukslevi/changai`, every two hours. The
+  secrets `APP_URL` and `CRON_SECRET` are set on the repository.
+- **Vercel Cron** - once a day at 03:00 UTC, which is late morning in China.
+  Daily is the Hobby plan's limit; the schedule in `vercel.json` is set to the
+  one slot where sending is allowed.
 
-Use one or the other, not both, or every cycle runs twice.
+Running both is harmless. A second call in the same window finds nothing to do,
+because every step keys off what is already recorded rather than off a timer.
+
+A workflow whose repository sees no commits for 60 days is disabled by GitHub
+automatically. If replies stop arriving in the app, check that first.
 
 `npm run watch` still exists for local work. It is the same three steps and it
 does depend on your machine staying awake - fine for watching a run in progress,
