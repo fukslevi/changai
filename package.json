@@ -1,0 +1,35 @@
+{
+  "name": "changai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SOSIMPLE sourcing agent — RFQ intake, supplier discovery, outbound, quote comparison",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push",
+    "watch": "tsx --env-file=.env scripts/watch.ts",
+    "watch:send": "tsx --env-file=.env scripts/watch.ts --send"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.117.1",
+    "cheerio": "^1.2.0",
+    "drizzle-orm": "^0.45.2",
+    "googleapis": "^174.0.1",
+    "next": "^16.3.1",
+    "postgres": "^3.4.9",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "drizzle-kit": "^0.31.10",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2"
+  }
+}
