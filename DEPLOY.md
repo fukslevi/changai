@@ -54,6 +54,22 @@ send access to the sourcing mailbox and does not expire on its own. If it ever
 leaks, revoke it at https://myaccount.google.com/permissions and run
 `scripts/gmail-auth.ts` again.
 
+## Who runs the schedule
+
+Nothing schedules itself from your machine. Two options, both in the cloud:
+
+- **Vercel Cron** (`vercel.json`) - simplest, but on the Hobby plan it fires at
+  most once a day, which is too coarse for a mailbox. Every two hours needs Pro.
+- **GitHub Actions** (`.github/workflows/cron.yml`) - every two hours on any
+  plan. Needs two repository secrets: `APP_URL` and `CRON_SECRET`. Runs on
+  GitHub's machines, so your laptop can be shut.
+
+Use one or the other, not both, or every cycle runs twice.
+
+`npm run watch` still exists for local work. It is the same three steps and it
+does depend on your machine staying awake - fine for watching a run in progress,
+wrong as the thing production relies on.
+
 ## Sending on a schedule
 
 `/api/cron` only sends inside Chinese business hours - reading, classifying and

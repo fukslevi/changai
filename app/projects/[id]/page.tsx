@@ -85,10 +85,22 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     });
   }
 
-  // Conversations where the supplier spoke last, so the ball is with us.
-  const awaitingReply = threads.filter(
+  /*
+   * Conversations the autopilot can actually act on. A quotation sitting in an
+   * attachment, or a supplier disputing a requirement, is waiting on a person -
+   * counting those under a button labelled "reply to N suppliers" promised
+   * something the button would then refuse to do.
+   */
+  const ballWithUs = threads.filter(
     (t) => t.messages[t.messages.length - 1]?.direction === "inbound",
-  ).length;
+  );
+  const heldForHuman = ballWithUs.filter((t) => {
+    const last = t.messages[t.messages.length - 1];
+    return (
+      last?.analysis?.challenges_a_requirement === true || last?.classification === "quotation"
+    );
+  });
+  const awaitingReply = ballWithUs.length - heldForHuman.length;
 
   const repliedCount = threads.filter((t) =>
     t.messages.some((m) => m.direction === "inbound"),
@@ -133,6 +145,11 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           questions={open}
           answered={answered}
           awaitingReply={awaitingReply}
+          heldForHuman={heldForHuman.map((t) => ({
+            company: t.company,
+            reason:
+              t.messages[t.messages.length - 1]?.analysis?.needs_human_reason ?? "דורש החלטה שלך",
+          }))}
         />
       </section>
 

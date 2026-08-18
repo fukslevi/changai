@@ -1,0 +1,38 @@
+# Runs the agent cycle from GitHub's infrastructure.
+#
+# Vercel's own scheduler is configured in vercel.json, but on the Hobby plan it
+# fires at most once a day - too coarse for a mailbox that should be read every
+# couple of hours. This workflow does the same thing on any plan, and like the
+# Vercel scheduler it runs in the cloud: nothing depends on a laptop being on.
+#
+# Needs two repository secrets:
+#   APP_URL      https://<your-app>.vercel.app
+#   CRON_SECRET  the same value set in the app's environment
+name: agent cycle
+
+on:
+  schedule:
+    # Every two hours. Times are UTC; the app decides on its own whether the
+    # hour falls inside Chinese business hours before it sends anything.
+    - cron: "0 */2 * * *"
+  workflow_dispatch:
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run one cycle
+        run: |
+          response=$(curl -sS --max-time 300 -w "\n%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.APP_URL }}/api/cron")
+          body=$(echo "$response" | head -n -1)
+          code=$(echo "$response" | tail -n 1)
+          echo "$body"
+          # A 401 means the secret does not match; HTML means the login
+          # middleware caught the route. Both look like success in a log that
+          # only checks that curl exited cleanly, so check the status here.
+          if [ "$code" != "200" ]; then
+            echo "::error::cron returned $code"
+            exit 1
+          fi

@@ -96,6 +96,10 @@ export async function runAutopilotAction(
   const projectId = String(formData.get("projectId") ?? "");
   if (!projectId) return { error: "Missing project" };
 
+  // The same form drives both buttons so there is only ever one message on
+  // screen, and it always belongs to the button that was just pressed.
+  if (formData.get("mode") === "preview") return previewAutopilot({}, formData);
+
   try {
     const result = await runAutopilot(projectId);
     revalidatePath(`/projects/${projectId}`);
@@ -109,7 +113,10 @@ export async function runAutopilotAction(
         : "",
     ].filter(Boolean);
 
-    return { ok: parts.join(" · ") || "אין שיחות פתוחות" };
+    if (parts.length === 0) {
+      return { ok: "אין שיחה שממתינה לתשובה שלנו כרגע." };
+    }
+    return { ok: parts.join(" · ") };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "ההרצה נכשלה" };
   }

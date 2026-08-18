@@ -5,7 +5,6 @@ import { useFormStatus } from "react-dom";
 import {
   answerQuestion,
   dismissQuestion,
-  previewAutopilot,
   runAutopilotAction,
   type AutopilotState,
 } from "@/lib/actions/autopilot";
@@ -141,23 +140,25 @@ export function OpenQuestions({
   questions,
   answered,
   awaitingReply,
+  heldForHuman,
 }: {
   projectId: string;
   questions: QuestionRow[];
   answered: AnsweredRow[];
-  /** Conversations where a supplier is waiting on us right now. */
+  /** Conversations the autopilot can answer on its own. */
   awaitingReply: number;
+  /** Conversations only a person can move forward. */
+  heldForHuman: { company: string; reason: string }[];
 }) {
-  const [previewState, preview] = useActionState<AutopilotState, FormData>(previewAutopilot, {});
   const [runState, run] = useActionState<AutopilotState, FormData>(runAutopilotAction, {});
 
   return (
     <div className="stack" dir="rtl">
-      {questions.length === 0 ? (
+      {questions.length === 0 && heldForHuman.length === 0 && awaitingReply === 0 ? (
         <p className="muted" style={{ margin: 0 }}>
           אין שאלות פתוחות.
         </p>
-      ) : (
+      ) : questions.length === 0 ? null : (
         <ul className="list">
           {questions.map((q) => (
             <Question key={q.id} projectId={projectId} row={q} />
@@ -165,16 +166,31 @@ export function OpenQuestions({
         </ul>
       )}
 
+      {heldForHuman.length > 0 && (
+        <ul className="list">
+          {heldForHuman.map((h) => (
+            <li key={h.company}>
+              <div className="spread">
+                <strong style={{ fontWeight: 600 }}>{h.company}</strong>
+                <span className="tag" style={{ color: "var(--bad)" }}>
+                  רק אתה יכול
+                </span>
+              </div>
+              <p className="muted" style={{ margin: "4px 0 0", fontSize: 12.5 }}>
+                {h.reason} - פתחו את השיחה בסעיף התשובות כדי לענות.
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+
       {awaitingReply > 0 && (
-        <div className="row">
-          <form action={run}>
-            <input type="hidden" name="projectId" value={projectId} />
-            <Submit label={`ענה ל-${awaitingReply} ספקים`} pendingLabel="עונה…" />
-          </form>
-          <form action={preview}>
-            <input type="hidden" name="projectId" value={projectId} />
-            <Submit label="הצג קודם" pendingLabel="בודק…" ghost />
-          </form>
+        <form action={run} className="row">
+          <input type="hidden" name="projectId" value={projectId} />
+          <Submit label={`ענה ל-${awaitingReply} ספקים`} pendingLabel="שולח…" />
+          <button type="submit" name="mode" value="preview" className="ghost">
+            הצג קודם
+          </button>
           <span
             className="muted"
             style={{ fontSize: 12.5 }}
@@ -182,15 +198,14 @@ export function OpenQuestions({
           >
             מה לא נענה לבד ⓘ
           </span>
-        </div>
+        </form>
       )}
 
-      <Feedback state={previewState} />
       <Feedback state={runState} />
 
-      {previewState.preview && previewState.preview.length > 0 && (
+      {runState.preview && runState.preview.length > 0 && (
         <ul className="list">
-          {previewState.preview.map((p, i) => (
+          {runState.preview.map((p, i) => (
             <li key={`${p.company}-${i}`}>
               <div className="spread">
                 <strong>{p.company}</strong>
