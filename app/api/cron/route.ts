@@ -15,6 +15,13 @@ import { pollInbox } from "@/lib/inbox/run";
  * Reading and triage run on every call. Sending only happens inside Chinese
  * business hours, so the queue is always current when someone opens the page
  * while nothing lands in a supplier's inbox at three in the morning.
+ *
+ * Two schedules can drive this and they are deliberately unequal. Vercel's own
+ * cron is capped at once a day on the Hobby plan, so it is set to 03:00 UTC -
+ * late morning in China, the one daily slot where sending is allowed. The
+ * GitHub Actions workflow runs every two hours for real responsiveness. Running
+ * both is harmless: a second call in the same window finds nothing left to do,
+ * because every step keys off what is already recorded.
  */
 
 // Classifying several replies with a large model is not a fast request.

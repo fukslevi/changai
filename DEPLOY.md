@@ -1,5 +1,12 @@
 # Deploying changai
 
+**Live:** https://changai-gilt.vercel.app
+**Cron:** `GET /api/cron` with `Authorization: Bearer $CRON_SECRET` - verified 200.
+Without the header it returns 401, which is the intended state.
+
+The `changai-sosimple.vercel.app` alias sits behind Vercel's own deployment
+protection and will bounce you to a Vercel login. Use the address above.
+
 The app is a standard Next.js server app plus a scheduled route. It needs a Node
 host, not static hosting: every useful thing it does - reading Gmail, calling
 Claude, writing to Postgres - happens on the server.
