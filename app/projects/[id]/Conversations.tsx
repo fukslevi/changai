@@ -269,6 +269,8 @@ export function Conversations({
   return (
     <div className="stack" dir="rtl">
       <form action={refresh}>
+        {/* Without this the action receives no project and refuses every click. */}
+        <input type="hidden" name="projectId" value={projectId} />
         <div className="row">
           <Submit label="בדוק תשובות" pendingLabel="בודק…" />
           <span className="muted">

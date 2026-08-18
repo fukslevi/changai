@@ -16,6 +16,7 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db, items, messages, openQuestions, projects, requirements, suppliers } from "../db";
+import { attachmentContext } from "../quotes/context";
 import { getSettings } from "../settings";
 import { sendReply } from "./reply";
 
@@ -141,6 +142,15 @@ export async function planReply({
 
   const latest = [...thread].reverse().find((m) => m.direction === "inbound");
 
+  /*
+   * Read what they attached. Without this the planner sees "please check" and a
+   * filename, decides it cannot judge a quotation it never opened, and hands
+   * the thread to a person - which is the right call when you are blind, and
+   * unnecessary once you are not. The numbers a supplier considers the answer
+   * are almost always in the file, not the message.
+   */
+  const attachmentText = await attachmentContext(latest?.attachments ?? []);
+
   const brief = [
     `PRODUCT: ${project.name}`,
     `QUANTITY TIERS: ${project.quantityTiers.join(" / ")}`,
@@ -162,6 +172,9 @@ export async function planReply({
     ...thread.map(
       (m) => `[${m.direction === "inbound" ? "THEM" : "US"}] ${(m.bodyText ?? "").slice(0, 1500)}`,
     ),
+    "",
+    attachmentText.length > 0 ? "CONTENTS OF THEIR ATTACHMENTS:" : "",
+    ...attachmentText,
     "",
     latest?.analysis
       ? [

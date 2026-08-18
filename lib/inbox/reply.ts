@@ -9,8 +9,10 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { and, asc, eq } from "drizzle-orm";
-import { db, items, messages, outreach, projects, requirements, suppliers } from "../db";
+import { and as andOp } from "drizzle-orm";
+import { db, items, messages, openQuestions, outreach, projects, requirements, suppliers } from "../db";
 import { messageIdHeaderOf, sendEmail } from "../mail/gmail";
+import { attachmentContext } from "../quotes/context";
 import { getSettings } from "../settings";
 
 export { GAP_LABELS } from "./labels";
@@ -73,6 +75,27 @@ export async function draftReply({ projectId, supplierId }: DraftContext): Promi
   const latest = [...thread].reverse().find((m) => m.direction === "inbound");
   const analysis = latest?.analysis;
 
+  // Same view of the attachments the autopilot has. Drafting without them
+  // produced a reply telling a supplier we had never received the quotation
+  // they had in fact sent.
+  const attachmentText = await attachmentContext(latest?.attachments ?? []);
+
+  /*
+   * Decisions already made on this project. The autopilot had these and the
+   * manual drafter did not, so a hand-written reply could contradict an answer
+   * the operator had given days earlier - quoting steel back at a supplier
+   * after we had settled on aluminium.
+   */
+  const decided = await db
+    .select()
+    .from(openQuestions)
+    .where(
+      andOp(eq(openQuestions.projectId, projectId), eq(openQuestions.status, "answered")),
+    );
+  const facts = decided
+    .filter((q) => q.answer)
+    .map((q) => `${q.questionEn} -> ${q.answer as string}`);
+
   const brief = [
     `PRODUCT: ${project.name}`,
     `QUANTITY TIERS: ${project.quantityTiers.join(" / ")}`,
@@ -85,6 +108,9 @@ export async function draftReply({ projectId, supplierId }: DraftContext): Promi
       : "",
     ...targets.map((t) => `- ${t}`),
     "",
+    facts.length > 0 ? "FACTS ALREADY DECIDED BY THE OPERATOR - these override the RFQ text:" : "",
+    ...facts.map((f) => `- ${f}`),
+    "",
     `SUPPLIER: ${supplier.companyName}`,
     "",
     "CONVERSATION SO FAR:",
@@ -92,6 +118,9 @@ export async function draftReply({ projectId, supplierId }: DraftContext): Promi
       (m) =>
         `[${m.direction === "inbound" ? "THEM" : "US"}] ${(m.bodyText ?? "").slice(0, 1500)}`,
     ),
+    "",
+    attachmentText.length > 0 ? "CONTENTS OF THEIR ATTACHMENTS:" : "",
+    ...attachmentText,
     "",
     analysis
       ? [
