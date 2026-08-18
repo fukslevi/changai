@@ -36,3 +36,5 @@ jobs:
             echo "::error::cron returned $code"
             exit 1
           fi
+
+# Registered with Actions on first push after repo creation.
