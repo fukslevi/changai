@@ -187,10 +187,6 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           1 · מה מחכה לך{" "}
           {open.length > 0 && <span className="bad" style={{ fontSize: 14 }}>({open.length})</span>}
         </h2>
-<h2>
-          מה מחכה לך{" "}
-          {open.length > 0 && <span className="bad" style={{ fontSize: 14 }}>({open.length})</span>}
-        </h2>
         <Guide k="openQuestions" />
         <OpenQuestions
           projectId={project.id}
@@ -210,7 +206,6 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           2 · שיחות עם ספקים{" "}
           <span className="muted" style={{ fontSize: 14 }}>({repliedCount} ענו)</span>
         </h2>
-<h2>Replies</h2>
         <Guide k="replies" />
         <Conversations projectId={project.id} threads={threads} />
       </section>
@@ -219,7 +214,6 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         <h2>
           3 · ספקים <span className="muted" style={{ fontSize: 14 }}>({leads.length})</span>
         </h2>
-<h2>Suppliers</h2>
         <Guide k="suppliers" />
         <Suppliers projectId={project.id} leads={leads} />
         <details open={campaign.pending.length > 0}>
@@ -228,9 +222,6 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
               שליחה <span className="muted">({campaign.pending.length})</span>
             </h2>
           </summary>
-<h2>
-          Send <span className="muted">({campaign.pending.length})</span>
-        </h2>
         <Guide k="campaign" />
         <Campaign
           projectId={project.id}
@@ -251,7 +242,6 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
 
       <section id="step-product" className="card stack">
         <h2>4 · המוצר</h2>
-<h2>RFQ</h2>
         {projectFiles.length === 0 ? (
           <p className="muted" dir="rtl">
             עדיין לא הועלה RFQ. כל המפרט, מחירי המטרה ומדרגות הכמות נקראים ממנו - אפשר להתחיל

@@ -246,3 +246,42 @@ section > details[open] > summary::before { content: "▾"; }
   .rail-item { border-inline-start: 0; border-bottom: 2px solid transparent; }
   .rail-item.is-active { border-bottom-color: var(--accent); }
 }
+
+/* RTL baseline
+   The document is RTL. Anything that must read left to right - an email draft,
+   a price, a domain, a supplier's own words - marks itself with dir="ltr", and
+   these rules make sure such an element also aligns the way it reads. */
+body { text-align: right; }
+
+[dir="ltr"] { text-align: left; }
+
+input,
+textarea,
+select {
+  text-align: right;
+}
+input[dir="ltr"],
+textarea[dir="ltr"],
+input[type="number"],
+input[type="email"],
+input[type="url"] {
+  text-align: left;
+  direction: ltr;
+}
+
+/* Latin identifiers stay readable inside Hebrew sentences. */
+code,
+pre {
+  direction: ltr;
+  text-align: left;
+  unicode-bidi: isolate;
+}
+
+/* Bullets sit on the correct side once the list direction flips. */
+ul:not(.list),
+ol {
+  padding-inline-start: 20px;
+  padding-inline-end: 0;
+}
+
+.empty { text-align: center; }

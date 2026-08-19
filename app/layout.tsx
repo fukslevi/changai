@@ -9,7 +9,13 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    /*
+     * The interface is Hebrew, so the document is Hebrew. English still appears
+     * inside it - supplier names, email drafts, prices - and each of those
+     * carries its own dir="ltr", which is the right way round: an RTL document
+     * with LTR islands, rather than an LTR document that fights every label.
+     */
+    <html lang="he" dir="rtl">
       <body>
         <div className="shell">
           <header className="top">
