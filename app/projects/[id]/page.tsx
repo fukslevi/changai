@@ -114,17 +114,11 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   ).length;
 
   const navSections: NavSection[] = [
-    { id: "questions", label: "מה מחכה לך", count: open.length, urgent: open.length > 0 },
-    { id: "autonomy", label: "רמת אוטונומיה" },
-    { id: "replies", label: "תשובות מספקים", count: repliedCount },
-    { id: "suppliers", label: "ספקים", count: leads.length },
-    { id: "send", label: "שליחה", count: campaign.pending.length },
-    { id: "model", label: "מודל כלכלי", dimmed: !pricing.ready },
-    { id: "rfq", label: "RFQ" },
-    { id: "issues", label: "תקלות ב-RFQ", count: issues.length, dimmed: issues.length === 0 },
-    { id: "items", label: "פריטים", count: projectItems.length, dimmed: !parsed },
-    { id: "email", label: "מייל הפנייה" },
-    { id: "details", label: "הגדרות פרויקט" },
+    { id: "step-inbox", label: "מה מחכה לך", count: open.length, urgent: open.length > 0 },
+    { id: "step-talks", label: "שיחות עם ספקים", count: repliedCount },
+    { id: "step-suppliers", label: "ספקים", count: leads.length },
+    { id: "step-product", label: "המוצר", dimmed: !parsed },
+    { id: "step-settings", label: "הגדרות" },
   ];
 
   return (
@@ -158,8 +152,42 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         </div>
       </div>
 
-      <section id="questions" className="card stack">
+
+
+
+
+
+
+
+
+      
+      
+
+
+
+
+
+
+
+
+
+
+
+      {/*
+        Five steps, in the order the work happens.
+        
+        There were eleven sections and a rail with eleven entries, which is an
+        accurate map of the system and a poor description of the job. Grouping
+        them hides nothing - every sub-part is still here - but it answers the
+        question an operator opens the page with, which is "what stage is this
+        at" rather than "which of eleven panels did I want".
+      */}
+      <section id="step-inbox" className="card stack">
         <h2>
+          1 · מה מחכה לך{" "}
+          {open.length > 0 && <span className="bad" style={{ fontSize: 14 }}>({open.length})</span>}
+        </h2>
+<h2>
           מה מחכה לך{" "}
           {open.length > 0 && <span className="bad" style={{ fontSize: 14 }}>({open.length})</span>}
         </h2>
@@ -177,50 +205,53 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         />
       </section>
 
-      <section id="autonomy" className="card stack">
-        <details open>
+      <section id="step-talks" className="card stack">
+        <h2>
+          2 · שיחות עם ספקים{" "}
+          <span className="muted" style={{ fontSize: 14 }}>({repliedCount} ענו)</span>
+        </h2>
+<h2>Replies</h2>
+        <Guide k="replies" />
+        <Conversations projectId={project.id} threads={threads} />
+      </section>
+
+      <section id="step-suppliers" className="card stack">
+        <h2>
+          3 · ספקים <span className="muted" style={{ fontSize: 14 }}>({leads.length})</span>
+        </h2>
+<h2>Suppliers</h2>
+        <Guide k="suppliers" />
+        <Suppliers projectId={project.id} leads={leads} />
+        <details open={campaign.pending.length > 0}>
           <summary>
             <h2 style={{ display: "inline", fontSize: 16 }}>
-              רמת אוטונומיה{" "}
-              <span className={project.autonomyTier >= 3 ? "good" : "muted"}>
-                {project.autonomyTier >= 3 ? "אוטונומי" : "מלווה"}
-              </span>
+              שליחה <span className="muted">({campaign.pending.length})</span>
             </h2>
           </summary>
-          <Guide k="autonomy" />
-          <Autonomy
-            projectId={project.id}
-            tier={project.autonomyTier}
-            sampleBudgetUsd={mandate.sampleBudgetUsd}
-            maxToolingUsd={mandate.maxToolingUsd}
-            allowSpecSubstitution={project.allowSpecSubstitution}
-            maxRounds={mandate.maxRounds}
-            ceilings={mandate.ceilings.flatMap((c) =>
-              c.tiers.map((t) => ({
-                itemName: c.itemName,
-                qty: t.qty,
-                walkAwayFob: t.walkAwayFob,
-              })),
-            )}
-            blockedReason={mandate.blockedReason}
-            absoluteLimits={ABSOLUTE_LIMITS}
-          />
+<h2>
+          Send <span className="muted">({campaign.pending.length})</span>
+        </h2>
+        <Guide k="campaign" />
+        <Campaign
+          projectId={project.id}
+          pending={campaign.pending.map((r) => ({
+            companyName: r.companyName,
+            email: r.email,
+            matchScore: r.matchScore,
+          }))}
+          blocked={campaign.blocked}
+          sent={campaign.sent}
+          failed={campaign.failed}
+          hasAttachment={projectFiles.some((f) => f.kind === "rfq")}
+          hasEmail={Boolean(project.outreachSubject && project.outreachBody)}
+          missingCommercials={pricing.ready ? [] : pricing.missing}
+        />
         </details>
       </section>
 
-      <section id="details" className="card stack">
-        <div className="spread">
-          <h2 style={{ margin: 0 }}>Details</h2>
-        </div>
-        <EditDetails
-          projectId={project.id}
-          name={project.name}
-          keywords={project.keywords}
-        />
-      </section>
-
-      <section id="rfq" className="card stack">
-        <h2>RFQ</h2>
+      <section id="step-product" className="card stack">
+        <h2>4 · המוצר</h2>
+<h2>RFQ</h2>
         {projectFiles.length === 0 ? (
           <p className="muted" dir="rtl">
             עדיין לא הועלה RFQ. כל המפרט, מחירי המטרה ומדרגות הכמות נקראים ממנו - אפשר להתחיל
@@ -240,10 +271,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         )}
         {projectFiles.length > 0 && <ParseRfq projectId={project.id} parsed={parsed} />}
         <UploadRfq projectId={project.id} hasRfq={projectFiles.length > 0} />
-      </section>
-
-      {issues.length > 0 && (
-        <section id="issues" className="card stack">
+{issues.length > 0 && (
           <details>
             <summary>
               <h2 style={{ display: "inline", fontSize: 16 }}>
@@ -267,11 +295,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             ))}
             </ul>
           </details>
-        </section>
-      )}
-
-      {parsed && (
-        <section id="items" className="card stack">
+        )}
+{parsed && (
           <details>
             <summary>
               <h2 style={{ display: "inline", fontSize: 16 }}>
@@ -288,7 +313,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
                 <div className="muted">
                   {item.targetPrices.length > 0
                     ? item.targetPrices
-                        .map((p) => `${p.qty ?? "—"}: $${p.unit_price ?? "?"}`)
+                        .map((p) => `${p.qty ?? "—"}: ${p.unit_price ?? "?"}`)
                         .join("  ·  ")
                     : "No target price in the RFQ"}
                 </div>
@@ -302,11 +327,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             </p>
             <Guide k="items" />
           </details>
-        </section>
-      )}
-
-      <section id="model" className="card stack">
-        <details open={pricing.ready}>
+        )}
+<details open={pricing.ready}>
           <summary>
             <h2 style={{ display: "inline", fontSize: 16 }}>
               מודל כלכלי{" "}
@@ -315,7 +337,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
                   walk-away{" "}
                   {pricing.products
                     .filter((p) => p.tiers.length > 0)
-                    .map((p) => `$${p.tiers[p.tiers.length - 1]!.walkAwayFob.toFixed(2)}`)
+                    .map((p) => `${p.tiers[p.tiers.length - 1]!.walkAwayFob.toFixed(2)}`)
                     .join(" · ")}
                 </span>
               ) : (
@@ -354,8 +376,37 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         </details>
       </section>
 
-      <section id="email" className="card stack">
-        <details>
+      <section id="step-settings" className="card stack">
+        <h2>5 · הגדרות</h2>
+<details open>
+          <summary>
+            <h2 style={{ display: "inline", fontSize: 16 }}>
+              רמת אוטונומיה{" "}
+              <span className={project.autonomyTier >= 3 ? "good" : "muted"}>
+                {project.autonomyTier >= 3 ? "אוטונומי" : "מלווה"}
+              </span>
+            </h2>
+          </summary>
+          <Guide k="autonomy" />
+          <Autonomy
+            projectId={project.id}
+            tier={project.autonomyTier}
+            sampleBudgetUsd={mandate.sampleBudgetUsd}
+            maxToolingUsd={mandate.maxToolingUsd}
+            allowSpecSubstitution={project.allowSpecSubstitution}
+            maxRounds={mandate.maxRounds}
+            ceilings={mandate.ceilings.flatMap((c) =>
+              c.tiers.map((t) => ({
+                itemName: c.itemName,
+                qty: t.qty,
+                walkAwayFob: t.walkAwayFob,
+              })),
+            )}
+            blockedReason={mandate.blockedReason}
+            absoluteLimits={ABSOLUTE_LIMITS}
+          />
+        </details>
+<details>
           <summary>
             <h2 style={{ display: "inline", fontSize: 16 }}>מייל הפנייה</h2>
           </summary>
@@ -367,42 +418,15 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           canGenerate={parsed}
         />
         </details>
-      </section>
-
-      <section id="suppliers" className="card stack">
-        <h2>Suppliers</h2>
-        <Guide k="suppliers" />
-        <Suppliers projectId={project.id} leads={leads} />
-      </section>
-
-      <section id="send" className="card stack">
-        <h2>
-          Send <span className="muted">({campaign.pending.length})</span>
-        </h2>
-        <Guide k="campaign" />
-        <Campaign
+<div className="spread">
+          <h2 style={{ margin: 0 }}>Details</h2>
+        </div>
+        <EditDetails
           projectId={project.id}
-          pending={campaign.pending.map((r) => ({
-            companyName: r.companyName,
-            email: r.email,
-            matchScore: r.matchScore,
-          }))}
-          blocked={campaign.blocked}
-          sent={campaign.sent}
-          failed={campaign.failed}
-          hasAttachment={projectFiles.some((f) => f.kind === "rfq")}
-          hasEmail={Boolean(project.outreachSubject && project.outreachBody)}
-          missingCommercials={pricing.ready ? [] : pricing.missing}
+          name={project.name}
+          keywords={project.keywords}
         />
       </section>
-
-
-      <section id="replies" className="card stack">
-        <h2>Replies</h2>
-        <Guide k="replies" />
-        <Conversations projectId={project.id} threads={threads} />
-      </section>
-
       <Link href="/" className="muted">
         ← All projects
       </Link>
