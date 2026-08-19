@@ -12,7 +12,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { and as andOp } from "drizzle-orm";
 import { db, items, messages, openQuestions, outreach, projects, requirements, suppliers } from "../db";
 import { messageIdHeaderOf, sendEmail } from "../mail/gmail";
-import { attachmentContext } from "../quotes/context";
+import { attachmentBlocks } from "../quotes/context";
 import { getSettings } from "../settings";
 
 export { GAP_LABELS } from "./labels";
@@ -78,7 +78,7 @@ export async function draftReply({ projectId, supplierId }: DraftContext): Promi
   // Same view of the attachments the autopilot has. Drafting without them
   // produced a reply telling a supplier we had never received the quotation
   // they had in fact sent.
-  const attachmentText = await attachmentContext(latest?.attachments ?? []);
+  const attachments = await attachmentBlocks(latest?.attachments ?? []);
 
   /*
    * Decisions already made on this project. The autopilot had these and the
@@ -119,8 +119,6 @@ export async function draftReply({ projectId, supplierId }: DraftContext): Promi
         `[${m.direction === "inbound" ? "THEM" : "US"}] ${(m.bodyText ?? "").slice(0, 1500)}`,
     ),
     "",
-    attachmentText.length > 0 ? "CONTENTS OF THEIR ATTACHMENTS:" : "",
-    ...attachmentText,
     "",
     analysis
       ? [
@@ -141,7 +139,17 @@ export async function draftReply({ projectId, supplierId }: DraftContext): Promi
     max_tokens: 4000,
     output_config: { effort: "medium" },
     system: SYSTEM,
-    messages: [{ role: "user", content: brief }],
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text" as const, text: brief },
+          ...(attachments.length > 0
+            ? [{ type: "text" as const, text: "CONTENTS OF THEIR ATTACHMENTS:" }, ...attachments]
+            : []),
+        ],
+      },
+    ],
   });
 
   const response = await stream.finalMessage();

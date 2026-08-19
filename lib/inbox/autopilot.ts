@@ -18,7 +18,7 @@ import { z } from "zod";
 import { db, items, messages, openQuestions, projects, requirements, suppliers } from "../db";
 import { checkDraft } from "../negotiate/guard";
 import { loadMandate, mandateBrief, type Mandate } from "../negotiate/mandate";
-import { attachmentContext } from "../quotes/context";
+import { attachmentBlocks } from "../quotes/context";
 import { getSettings } from "../settings";
 import { sendReply } from "./reply";
 
@@ -177,7 +177,7 @@ export async function planReply(
    * unnecessary once you are not. The numbers a supplier considers the answer
    * are almost always in the file, not the message.
    */
-  const attachmentText = await attachmentContext(latest?.attachments ?? []);
+  const attachments = await attachmentBlocks(latest?.attachments ?? []);
 
   const brief = [
     `PRODUCT: ${project.name}`,
@@ -201,8 +201,6 @@ export async function planReply(
       (m) => `[${m.direction === "inbound" ? "THEM" : "US"}] ${(m.bodyText ?? "").slice(0, 1500)}`,
     ),
     "",
-    attachmentText.length > 0 ? "CONTENTS OF THEIR ATTACHMENTS:" : "",
-    ...attachmentText,
     "",
     mandate ? mandateBrief(mandate) : "",
     "",
@@ -222,7 +220,17 @@ export async function planReply(
     max_tokens: 8000,
     output_config: { effort: "medium", format: zodOutputFormat(ReplyPlan) },
     system: SYSTEM,
-    messages: [{ role: "user", content: brief }],
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text" as const, text: brief },
+          ...(attachments.length > 0
+            ? [{ type: "text" as const, text: "CONTENTS OF THEIR ATTACHMENTS:" }, ...attachments]
+            : []),
+        ],
+      },
+    ],
   });
 
   const response = await stream.finalMessage();
