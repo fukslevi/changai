@@ -133,6 +133,20 @@ export async function projectPricing(projectId: string): Promise<ProjectPricing>
       }
     }
 
+    /*
+     * The summary verdict has to use a real freight rate.
+     *
+     * Freight became a per-tier figure once the model learned that a container
+     * is cheaper per cubic metre than loose cargo, and the project-level rate
+     * stopped being set - which left this call multiplying by undefined and
+     * printing a walk-away of NaN on screen. The deepest tier is the right rate
+     * to summarise with: it is the volume the programme runs at.
+     */
+    const summaryRate =
+      tiers.length > 0
+        ? tiers[tiers.length - 1]!.freightPerUnit / (product.cbmPerUnit as number)
+        : (commercial.freightUsdPerCbm ?? 0);
+
     products.push({
       itemId: item.id,
       name: item.name,
@@ -140,7 +154,10 @@ export async function projectPricing(projectId: string): Promise<ProjectPricing>
       product,
       readiness: state,
       verdict: state.ready
-        ? evaluate(commercial as CommercialAssumptions, product as ProductAssumptions)
+        ? evaluate(
+            { ...(commercial as CommercialAssumptions), freightUsdPerCbm: summaryRate },
+            product as ProductAssumptions,
+          )
         : null,
       tiers,
     });
