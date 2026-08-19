@@ -40,7 +40,21 @@ export async function pollInbox(projectId: string): Promise<InboxResult> {
       outreachId: outreach.id,
     })
     .from(outreach)
-    .where(and(eq(outreach.projectId, projectId), eq(outreach.status, "sent")));
+    /*
+     * Both states, not just "sent".
+     *
+     * A thread flips to "replied" the first time a supplier answers - and the
+     * poll used to skip those, so every message after the first was invisible.
+     * Four suppliers had written back several times each and the system had
+     * read none of it. A conversation does not stop being worth reading because
+     * it has already been read once.
+     */
+    .where(
+      and(
+        eq(outreach.projectId, projectId),
+        inArray(outreach.status, ["sent", "replied"]),
+      ),
+    );
 
   const known = await db
     .select({ id: messages.gmailMessageId })

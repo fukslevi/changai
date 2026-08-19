@@ -13,7 +13,7 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db, items, messages, openQuestions, projects, requirements, suppliers } from "../db";
 import { checkDraft } from "../negotiate/guard";
@@ -307,7 +307,30 @@ export async function runAutopilot(
     )
     .orderBy(asc(messages.receivedAt));
 
+  /*
+   * One reply per conversation, not per message.
+   *
+   * A supplier who writes twice before we answer produced two drafts and would
+   * have received two emails, which reads as a system talking to itself. The
+   * newest message is the one to answer - it is the state of the conversation -
+   * and the earlier ones are marked handled because the reply covers them.
+   */
+  const latestPerSupplier = new Map<string, (typeof pending)[number]>();
+  const superseded: string[] = [];
   for (const message of pending) {
+    if (!message.supplierId) continue;
+    const held = latestPerSupplier.get(message.supplierId);
+    if (held) superseded.push(held.id);
+    latestPerSupplier.set(message.supplierId, message);
+  }
+  if (superseded.length > 0) {
+    await db
+      .update(messages)
+      .set({ handledAt: new Date() })
+      .where(inArray(messages.id, superseded));
+  }
+
+  for (const message of latestPerSupplier.values()) {
     if (!message.supplierId) continue;
     const company = message.company ?? "ספק";
 
