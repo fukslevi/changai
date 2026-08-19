@@ -16,6 +16,7 @@ import { campaignStatus } from "@/lib/outreach/batch";
 import { projectPricing } from "@/lib/pricing/project";
 import { conversations } from "@/lib/inbox/run";
 import { pendingQuestions } from "@/lib/questions";
+import { ACTIVITY_COLOUR, ACTIVITY_LABEL, projectStatuses } from "@/lib/project-status";
 import { ABSOLUTE_LIMITS, loadMandate } from "@/lib/negotiate/mandate";
 
 export const dynamic = "force-dynamic";
@@ -56,6 +57,9 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const mandate = await loadMandate(id);
 
   const { open, answered } = await pendingQuestions(id);
+  // Same source as the list page, so the two views can never disagree about
+  // whether a project is running.
+  const status = (await projectStatuses([project])).get(project.id);
 
   // One row per supplier we wrote to, in the order the conversation happened.
   const threads: SupplierThread[] = [];
@@ -135,7 +139,23 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             {project.quantityTiers.length > 0 && ` — ${project.quantityTiers.join(" / ")} sets`}
           </div>
         </div>
-        <span className="tag">{project.status}</span>
+        <div className="row" style={{ gap: 6 }}>
+          {status && (
+            <>
+              <span
+                className="tag"
+                style={{ color: status.autonomous ? "var(--ok)" : "var(--muted)" }}
+              >
+                {status.autonomous ? "אוטונומי" : "מלווה"}
+              </span>
+              <span className="tag" style={{ color: ACTIVITY_COLOUR[status.activity] }}>
+                {ACTIVITY_LABEL[status.activity]}
+                {status.activity === "needs_you" && ` (${status.openQuestions})`}
+                {status.activity === "running" && ` (${status.liveThreads})`}
+              </span>
+            </>
+          )}
+        </div>
       </div>
 
       <section id="questions" className="card stack">
