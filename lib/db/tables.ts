@@ -87,6 +87,31 @@ export const projects = pgTable("projects", {
   /** Everything between the port and the fulfilment centre, per unit. */
   inboundUsdPerUnit: numeric("inbound_usd_per_unit", { precision: 8, scale: 2 }).$type<string>(),
 
+  /*
+   * How far the agent may go on its own.
+   *
+   *   1  ask for facts, answer from the documents, escalate anything else
+   *   3  negotiate price and specification inside the mandate below
+   *
+   * There is no tier at which the agent places an order, pays a deposit or
+   * commits to tooling spend. Those are the point where money leaves the
+   * company, and no amount of autonomy over a conversation implies authority
+   * over a bank transfer.
+   */
+  autonomyTier: integer("autonomy_tier").notNull().default(1),
+  /** Samples the agent may commit to without asking. 0 means never. */
+  sampleBudgetUsd: numeric("sample_budget_usd", { precision: 10, scale: 2 }).$type<string>(),
+  /** Tooling the agent may accept without asking. 0 means never. */
+  maxToolingUsd: numeric("max_tooling_usd", { precision: 10, scale: 2 }).$type<string>(),
+  /**
+   * Whether a supplier may talk us out of a specification. Off by default: a
+   * substitution changes what you are selling, and the supplier proposing it is
+   * the party who benefits from it.
+   */
+  allowSpecSubstitution: boolean("allow_spec_substitution").notNull().default(false),
+  /** Rounds of back-and-forth before the thread is handed over regardless. */
+  maxNegotiationRounds: integer("max_negotiation_rounds").notNull().default(4),
+
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

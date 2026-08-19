@@ -11,10 +11,12 @@ import { Conversations, type SupplierThread } from "./Conversations";
 import { Commercials } from "./Commercials";
 import { OpenQuestions } from "./OpenQuestions";
 import { SideNav, type NavSection } from "./SideNav";
+import { Autonomy } from "./Autonomy";
 import { campaignStatus } from "@/lib/outreach/batch";
 import { projectPricing } from "@/lib/pricing/project";
 import { conversations } from "@/lib/inbox/run";
 import { pendingQuestions } from "@/lib/questions";
+import { ABSOLUTE_LIMITS, loadMandate } from "@/lib/negotiate/mandate";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +53,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const parsed = projectItems.length > 0 || projectRequirements.length > 0;
   const campaign = await campaignStatus(id);
   const pricing = await projectPricing(id);
+  const mandate = await loadMandate(id);
 
   const { open, answered } = await pendingQuestions(id);
 
@@ -111,6 +114,11 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     { id: "replies", label: "תשובות מספקים", count: repliedCount },
     { id: "suppliers", label: "ספקים", count: leads.length },
     { id: "send", label: "שליחה", count: campaign.pending.length },
+    {
+      id: "autonomy",
+      label: "רמת אוטונומיה",
+      count: project.autonomyTier >= 3 ? undefined : undefined,
+    },
     { id: "model", label: "מודל כלכלי", dimmed: !pricing.ready },
     { id: "rfq", label: "RFQ" },
     { id: "issues", label: "תקלות ב-RFQ", count: issues.length, dimmed: issues.length === 0 },
@@ -249,6 +257,37 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           </details>
         </section>
       )}
+
+      <section id="autonomy" className="card stack">
+        <details open={project.autonomyTier >= 3}>
+          <summary>
+            <h2 style={{ display: "inline", fontSize: 16 }}>
+              רמת אוטונומיה{" "}
+              <span className={project.autonomyTier >= 3 ? "good" : "muted"}>
+                {project.autonomyTier >= 3 ? "אוטונומי" : "מלווה"}
+              </span>
+            </h2>
+          </summary>
+          <Guide k="autonomy" />
+          <Autonomy
+            projectId={project.id}
+            tier={project.autonomyTier}
+            sampleBudgetUsd={mandate.sampleBudgetUsd}
+            maxToolingUsd={mandate.maxToolingUsd}
+            allowSpecSubstitution={project.allowSpecSubstitution}
+            maxRounds={mandate.maxRounds}
+            ceilings={mandate.ceilings.flatMap((c) =>
+              c.tiers.map((t) => ({
+                itemName: c.itemName,
+                qty: t.qty,
+                walkAwayFob: t.walkAwayFob,
+              })),
+            )}
+            blockedReason={mandate.blockedReason}
+            absoluteLimits={ABSOLUTE_LIMITS}
+          />
+        </details>
+      </section>
 
       <section id="model" className="card stack">
         <details open={pricing.ready}>

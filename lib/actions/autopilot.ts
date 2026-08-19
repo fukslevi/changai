@@ -108,6 +108,7 @@ export async function runAutopilotAction(
       result.replied.length > 0 ? `${result.replied.length} נענו אוטומטית` : "",
       result.parked.length > 0 ? `${result.parked.length} ממתינים לתשובה שלך` : "",
       result.heldForHuman.length > 0 ? `${result.heldForHuman.length} דורשים החלטה` : "",
+      result.blocked.length > 0 ? `${result.blocked.length} נחסמו בבדיקת בטיחות` : "",
       result.waitingOnAnswers.length > 0
         ? `${result.waitingOnAnswers.length} כבר ממתינים בתור`
         : "",

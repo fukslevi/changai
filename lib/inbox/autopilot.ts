@@ -16,6 +16,8 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db, items, messages, openQuestions, projects, requirements, suppliers } from "../db";
+import { checkDraft } from "../negotiate/guard";
+import { loadMandate, mandateBrief, type Mandate } from "../negotiate/mandate";
 import { attachmentContext } from "../quotes/context";
 import { getSettings } from "../settings";
 import { sendReply } from "./reply";
@@ -60,6 +62,16 @@ ANSWERABLE
 Set answerable true when every question they asked, and every point you need to
 raise, is covered by the requirements or the decided facts. Then write the reply.
 
+NEGOTIATING
+If a negotiation mandate is supplied you may discuss price and terms inside it.
+Open at the target price, move in small steps, and give a reason for every move -
+volume, a longer lead time you can accept, a simpler carton. Never reveal the
+ceiling and never mention a walk-away. If their price is already at or below the
+ceiling, say the price works and move the conversation to the remaining terms
+rather than pushing for more.
+
+If no mandate is supplied, do not discuss price at all.
+
 NOT ANSWERABLE
 Set answerable false when the supplier needs a fact nobody has stated - a
 material that the spec leaves open, a tolerance, a colour, a certification the
@@ -86,6 +98,22 @@ export interface ConversationContext {
   supplierId: string;
 }
 
+/** How many times we have written on this thread since the first outreach. */
+async function roundsSoFar(projectId: string, supplierId: string): Promise<number> {
+  const sent = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.projectId, projectId),
+        eq(messages.supplierId, supplierId),
+        eq(messages.direction, "outbound"),
+      ),
+    );
+  // The opening email is not a round of negotiation.
+  return Math.max(0, sent.length - 1);
+}
+
 /** Facts a person has already decided for this project. */
 async function decidedFacts(projectId: string): Promise<string[]> {
   const answered = await db
@@ -98,10 +126,10 @@ async function decidedFacts(projectId: string): Promise<string[]> {
     .map((q) => `${q.questionEn} -> ${q.answer as string}`);
 }
 
-export async function planReply({
-  projectId,
-  supplierId,
-}: ConversationContext): Promise<ReplyPlan> {
+export async function planReply(
+  { projectId, supplierId }: ConversationContext,
+  mandate?: Mandate,
+): Promise<ReplyPlan> {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY is not set");
 
   const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
@@ -176,6 +204,8 @@ export async function planReply({
     attachmentText.length > 0 ? "CONTENTS OF THEIR ATTACHMENTS:" : "",
     ...attachmentText,
     "",
+    mandate ? mandateBrief(mandate) : "",
+    "",
     latest?.analysis
       ? [
           "TRIAGE OF THEIR LAST MESSAGE:",
@@ -222,6 +252,8 @@ export function withinSupplierHours(now = new Date()): boolean {
 
 export interface AutopilotResult {
   replied: { company: string }[];
+  /** Drafts the guard refused to let out, with the reason. */
+  blocked: { company: string; problems: string[] }[];
   /** Answerable, drafted, not sent - only produced when send is off. */
   readyToSend: { company: string; draft: string }[];
   parked: { company: string; questions: string[] }[];
@@ -246,8 +278,10 @@ export async function runAutopilot(
   // only thing this flag controls.
   const send = options.send ?? true;
   const settings = await getSettings();
+  const mandate = await loadMandate(projectId);
   const result: AutopilotResult = {
     replied: [],
+    blocked: [],
     readyToSend: [],
     parked: [],
     heldForHuman: [],
@@ -284,20 +318,34 @@ export async function runAutopilot(
 
     /*
      * Two different things arrive as "needs a human", and they deserve
-     * different handling. A supplier disputing a price or a requirement is a
-     * judgement call, and a fresh one every time. A supplier asking a factual
-     * question the RFQ left open is a decision that is made once and then
-     * belongs to the project - that one goes to the queue, gets answered, and
-     * the reply proceeds on its own.
+     * different handling. A supplier asking a factual question the RFQ left
+     * open is a decision made once, which belongs in the queue. A supplier
+     * disputing a price or a requirement is a judgement call - and whether the
+     * agent may make it is exactly what the autonomy tier decides.
+     *
+     * At tier 3 the mandate carries a real ceiling, so the same message is work
+     * to do rather than a reason to stop. Without a ceiling it is still a stop:
+     * negotiating with no walk-away is conceding slowly.
      */
-    const needsJudgement =
+    const isJudgement =
       message.analysis?.challenges_a_requirement === true ||
       message.classification === "quotation";
 
-    if (needsJudgement) {
+    if (isJudgement && !mandate.mayNegotiatePrice) {
       result.heldForHuman.push({
         company,
-        reason: message.analysis?.needs_human_reason ?? "דורש החלטה",
+        reason:
+          mandate.blockedReason ?? message.analysis?.needs_human_reason ?? "דורש החלטה",
+      });
+      continue;
+    }
+
+    // Even a full mandate runs out. A conversation that has gone round several
+    // times is not going to be closed by one more email from a machine.
+    if (isJudgement && (await roundsSoFar(projectId, message.supplierId)) >= mandate.maxRounds) {
+      result.heldForHuman.push({
+        company,
+        reason: `${mandate.maxRounds} סבבים בלי סיכום - הועבר אליך`,
       });
       continue;
     }
@@ -319,7 +367,7 @@ export async function runAutopilot(
       continue;
     }
 
-    const plan = await planReply({ projectId, supplierId: message.supplierId });
+    const plan = await planReply({ projectId, supplierId: message.supplierId }, mandate);
 
     if (!plan.answerable) {
       for (const question of plan.open_questions) {
@@ -337,6 +385,18 @@ export async function runAutopilot(
         company,
         questions: plan.open_questions.map((q) => q.question_he),
       });
+      continue;
+    }
+
+    /*
+     * Read the draft once more before it goes. The mandate is in the prompt and
+     * the model follows it, which is not the same as it being impossible to
+     * break - and the two things this looks for, a price above the ceiling and
+     * a commitment to spend, are the two that cannot be walked back.
+     */
+    const guard = checkDraft(plan.draft, mandate);
+    if (!guard.safe) {
+      result.blocked.push({ company, problems: guard.problems });
       continue;
     }
 
@@ -386,7 +446,14 @@ export async function releaseAnswered(projectId: string): Promise<AutopilotResul
 
   const releasable = parked.filter((p) => p.messageId && !stillBlocked.has(p.messageId));
   if (releasable.length === 0) {
-    return { replied: [], readyToSend: [], parked: [], heldForHuman: [], waitingOnAnswers: [] };
+    return {
+      replied: [],
+      blocked: [],
+      readyToSend: [],
+      parked: [],
+      heldForHuman: [],
+      waitingOnAnswers: [],
+    };
   }
 
   return runAutopilot(projectId);
