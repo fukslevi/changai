@@ -111,14 +111,10 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
 
   const navSections: NavSection[] = [
     { id: "questions", label: "מה מחכה לך", count: open.length, urgent: open.length > 0 },
+    { id: "autonomy", label: "רמת אוטונומיה" },
     { id: "replies", label: "תשובות מספקים", count: repliedCount },
     { id: "suppliers", label: "ספקים", count: leads.length },
     { id: "send", label: "שליחה", count: campaign.pending.length },
-    {
-      id: "autonomy",
-      label: "רמת אוטונומיה",
-      count: project.autonomyTier >= 3 ? undefined : undefined,
-    },
     { id: "model", label: "מודל כלכלי", dimmed: !pricing.ready },
     { id: "rfq", label: "RFQ" },
     { id: "issues", label: "תקלות ב-RFQ", count: issues.length, dimmed: issues.length === 0 },
@@ -159,6 +155,37 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
               t.messages[t.messages.length - 1]?.analysis?.needs_human_reason ?? "דורש החלטה שלך",
           }))}
         />
+      </section>
+
+      <section id="autonomy" className="card stack">
+        <details open>
+          <summary>
+            <h2 style={{ display: "inline", fontSize: 16 }}>
+              רמת אוטונומיה{" "}
+              <span className={project.autonomyTier >= 3 ? "good" : "muted"}>
+                {project.autonomyTier >= 3 ? "אוטונומי" : "מלווה"}
+              </span>
+            </h2>
+          </summary>
+          <Guide k="autonomy" />
+          <Autonomy
+            projectId={project.id}
+            tier={project.autonomyTier}
+            sampleBudgetUsd={mandate.sampleBudgetUsd}
+            maxToolingUsd={mandate.maxToolingUsd}
+            allowSpecSubstitution={project.allowSpecSubstitution}
+            maxRounds={mandate.maxRounds}
+            ceilings={mandate.ceilings.flatMap((c) =>
+              c.tiers.map((t) => ({
+                itemName: c.itemName,
+                qty: t.qty,
+                walkAwayFob: t.walkAwayFob,
+              })),
+            )}
+            blockedReason={mandate.blockedReason}
+            absoluteLimits={ABSOLUTE_LIMITS}
+          />
+        </details>
       </section>
 
       <section id="details" className="card stack">
@@ -257,37 +284,6 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           </details>
         </section>
       )}
-
-      <section id="autonomy" className="card stack">
-        <details open={project.autonomyTier >= 3}>
-          <summary>
-            <h2 style={{ display: "inline", fontSize: 16 }}>
-              רמת אוטונומיה{" "}
-              <span className={project.autonomyTier >= 3 ? "good" : "muted"}>
-                {project.autonomyTier >= 3 ? "אוטונומי" : "מלווה"}
-              </span>
-            </h2>
-          </summary>
-          <Guide k="autonomy" />
-          <Autonomy
-            projectId={project.id}
-            tier={project.autonomyTier}
-            sampleBudgetUsd={mandate.sampleBudgetUsd}
-            maxToolingUsd={mandate.maxToolingUsd}
-            allowSpecSubstitution={project.allowSpecSubstitution}
-            maxRounds={mandate.maxRounds}
-            ceilings={mandate.ceilings.flatMap((c) =>
-              c.tiers.map((t) => ({
-                itemName: c.itemName,
-                qty: t.qty,
-                walkAwayFob: t.walkAwayFob,
-              })),
-            )}
-            blockedReason={mandate.blockedReason}
-            absoluteLimits={ABSOLUTE_LIMITS}
-          />
-        </details>
-      </section>
 
       <section id="model" className="card stack">
         <details open={pricing.ready}>
