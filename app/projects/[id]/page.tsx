@@ -148,7 +148,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             {project.quantityTiers.length > 0 && ` — ${project.quantityTiers.join(" / ")} sets`}
           </div>
         </div>
-        <div className="row" style={{ gap: 6 }}>
+        <div className="stack" style={{ gap: 4, alignItems: "flex-end" }}>
+          <div className="row" style={{ gap: 6 }}>
           {status && (
             <>
               <span
@@ -171,6 +172,12 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
                 {status.activity === "running" && ` (${status.liveThreads})`}
               </span>
             </>
+          )}
+          </div>
+          {status?.nextAction && (
+            <span className="muted" style={{ fontSize: 12.5 }} dir="rtl">
+              {status.nextAction}
+            </span>
           )}
         </div>
       </div>

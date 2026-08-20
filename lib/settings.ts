@@ -38,6 +38,19 @@ function toNumber(value: string | null, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+/** Stamped by the scheduled cycle so the UI can prove the loop is alive. */
+export async function markCycleRun(): Promise<void> {
+  await db
+    .insert(settings)
+    .values({ id: SINGLETON_ID, lastCycleAt: new Date() })
+    .onConflictDoUpdate({ target: settings.id, set: { lastCycleAt: new Date() } });
+}
+
+export async function lastCycleAt(): Promise<Date | null> {
+  const [row] = await db.select().from(settings).where(eq(settings.id, SINGLETON_ID));
+  return row?.lastCycleAt ?? null;
+}
+
 export async function getCommercialDefaults(): Promise<CommercialDefaults> {
   const [row] = await db.select().from(settings).where(eq(settings.id, SINGLETON_ID));
   if (!row) return FALLBACK_COMMERCIALS;

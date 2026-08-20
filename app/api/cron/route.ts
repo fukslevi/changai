@@ -3,6 +3,7 @@ import { db, projects } from "@/lib/db";
 import { runAutopilot, triageAndPark, withinSupplierHours } from "@/lib/inbox/autopilot";
 import { runFollowUps } from "@/lib/inbox/followup";
 import { runCampaign } from "@/lib/outreach/campaign";
+import { markCycleRun } from "@/lib/settings";
 import { pollInbox } from "@/lib/inbox/run";
 
 /**
@@ -81,6 +82,10 @@ export async function GET(request: Request) {
       });
     }
   }
+
+  // Stamped whatever happened: the useful fact is that the loop ran, not that
+  // it found work.
+  await markCycleRun();
 
   return NextResponse.json({ sendingWindow: canSend, projects: summary });
 }

@@ -11,7 +11,7 @@
  * goes stale exactly when it matters - the moment a supplier replies.
  */
 import { inArray } from "drizzle-orm";
-import { db, messages, outreach, projects } from "./db";
+import { db, messages, outreach, projects, supplierLeads } from "./db";
 import { pendingQuestions } from "./questions";
 
 export type Activity = "needs_you" | "running" | "ready_to_send" | "draft" | "stopped";
@@ -26,6 +26,8 @@ export interface ProjectStatus {
   /** Approved suppliers not yet written to. */
   waitingToSend: number;
   lastActivity: Date | null;
+  /** One line saying what happens next without anyone doing anything. */
+  nextAction: string | null;
 }
 
 export const ACTIVITY_LABEL: Record<Activity, string> = {
@@ -74,7 +76,7 @@ export async function projectStatuses(
   const out = new Map<string, ProjectStatus>();
   if (ids.length === 0) return out;
 
-  const [outreachRows, messageRows] = await Promise.all([
+  const [outreachRows, messageRows, leadRows] = await Promise.all([
     db
       .select({
         projectId: outreach.projectId,
@@ -87,6 +89,14 @@ export async function projectStatuses(
       .select({ projectId: messages.projectId, receivedAt: messages.receivedAt })
       .from(messages)
       .where(inArray(messages.projectId, ids)),
+    db
+      .select({
+        projectId: supplierLeads.projectId,
+        status: supplierLeads.status,
+        email: supplierLeads.email,
+      })
+      .from(supplierLeads)
+      .where(inArray(supplierLeads.projectId, ids)),
   ]);
 
   for (const project of rows) {
@@ -103,12 +113,44 @@ export async function projectStatuses(
     const { open } = await pendingQuestions(project.id);
     const questions = open.length;
 
+    const approved = leadRows.filter(
+      (l) => l.projectId === project.id && l.status === "approved" && l.email,
+    ).length;
+    const autonomous = project.autonomyTier >= 3;
+
+    /*
+     * "Ready to send" describes a project waiting for a person to press send.
+     * On an autonomous project nobody is waiting - the next cycle sends - so
+     * calling it "ready" reads as stalled when it is working. The distinction
+     * is who the next move belongs to, not what stage the project is at.
+     */
     let activity: Activity;
-    if (questions > 0) activity = "needs_you";
-    else if (live > 0) activity = "running";
-    else if (sent.length === 0 && project.sourceRfqFile) activity = "ready_to_send";
-    else if (sent.length === 0) activity = "draft";
-    else activity = "stopped";
+    let nextAction: string | null = null;
+
+    if (questions > 0) {
+      activity = "needs_you";
+      nextAction = `${questions} שאלות ממתינות לתשובה שלך`;
+    } else if (autonomous && approved > 0) {
+      activity = "running";
+      nextAction = `שולח פנייה ראשונה ל-${approved} ספקים במחזורים הקרובים`;
+    } else if (live > 0) {
+      activity = "running";
+      nextAction = autonomous
+        ? `${live} שיחות פתוחות - נענות אוטומטית`
+        : `${live} שיחות פתוחות`;
+    } else if (approved > 0) {
+      activity = "ready_to_send";
+      nextAction = `${approved} ספקים מאושרים, ממתינים שתשלח`;
+    } else if (sent.length === 0 && project.sourceRfqFile) {
+      activity = "ready_to_send";
+      nextAction = "אין עדיין ספקים מאושרים";
+    } else if (sent.length === 0) {
+      activity = "draft";
+      nextAction = "צריך להעלות RFQ";
+    } else {
+      activity = "stopped";
+      nextAction = "אין שיחה חיה ואין למי לשלוח";
+    }
 
     out.set(project.id, {
       id: project.id,
@@ -116,8 +158,9 @@ export async function projectStatuses(
       activity,
       liveThreads: live,
       openQuestions: questions,
-      waitingToSend: 0,
+      waitingToSend: approved,
       lastActivity: lastActivity ?? null,
+      nextAction,
     });
   }
 

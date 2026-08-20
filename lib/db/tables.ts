@@ -145,6 +145,14 @@ export const settings = pgTable("settings", {
     scale: 2,
   }).$type<string>(),
 
+  /**
+   * When the scheduled cycle last ran.
+   *
+   * Without it there is no way to tell a system that is working quietly from
+   * one that stopped days ago - both look like a page that is not changing.
+   */
+  lastCycleAt: timestamp("last_cycle_at", { withTimezone: true }),
+
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { desc } from "drizzle-orm";
 import { db, projects } from "@/lib/db";
+import { lastCycleAt } from "@/lib/settings";
 import {
   ACTIVITY_COLOUR,
   ACTIVITY_HINT,
@@ -13,6 +14,7 @@ export const dynamic = "force-dynamic";
 export default async function ProjectsPage() {
   const rows = await db.select().from(projects).orderBy(desc(projects.createdAt));
   const statuses = await projectStatuses(rows);
+  const cycle = await lastCycleAt();
 
   const when = (date: Date | null) =>
     date
@@ -27,7 +29,16 @@ export default async function ProjectsPage() {
   return (
     <main className="stack">
       <div className="spread">
-        <h2 style={{ margin: 0 }}>Projects</h2>
+        <div>
+          <h2 style={{ margin: 0 }}>Projects</h2>
+          {/* Proof the loop is alive. A quiet system and a dead one look the
+              same until something says when it last ran. */}
+          <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }} dir="rtl">
+            {cycle
+              ? `המחזור האוטומטי רץ לאחרונה ${when(cycle)}`
+              : "המחזור האוטומטי עוד לא רץ"}
+          </div>
+        </div>
         <Link href="/projects/new">
           <button>New project</button>
         </Link>
@@ -51,6 +62,15 @@ export default async function ProjectsPage() {
                     {p.quantityTiers.length > 0 && ` · ${p.quantityTiers.join(" / ")}`}
                     {p.sourceRfqFile && ` · ${p.sourceRfqFile}`}
                   </div>
+                  {statuses.get(p.id)?.nextAction && (
+                    <div
+                      className="muted"
+                      style={{ marginTop: 3, fontSize: 12.5 }}
+                      dir="rtl"
+                    >
+                      {statuses.get(p.id)?.nextAction}
+                    </div>
+                  )}
                 </div>
                 <div className="row" style={{ gap: 6 }}>
                   {(() => {
