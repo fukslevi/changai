@@ -11,6 +11,7 @@ import { Conversations, type SupplierThread } from "./Conversations";
 import { Commercials } from "./Commercials";
 import { OpenQuestions } from "./OpenQuestions";
 import { SideNav, type NavSection } from "./SideNav";
+import { Autostart } from "./Autostart";
 import { Autonomy } from "./Autonomy";
 import { campaignStatus } from "@/lib/outreach/batch";
 import { projectPricing } from "@/lib/pricing/project";
@@ -65,6 +66,15 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   // Same source as the list page, so the two views can never disagree about
   // whether a project is running.
   const status = (await projectStatuses([project])).get(project.id);
+
+  /*
+   * Setup that can still run unattended. An RFQ that has not been read, an
+   * email that has not been written, a search that has not run - all derived
+   * from the document, none of them a decision, so the page starts them itself.
+   */
+  const setupPending =
+    Boolean(project.sourceRfqFile) &&
+    (projectItems.length === 0 || !project.outreachBody || leads.length === 0);
 
   // One row per supplier we wrote to, in the order the conversation happened.
   const threads: SupplierThread[] = [];
@@ -195,6 +205,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         question an operator opens the page with, which is "what stage is this
         at" rather than "which of eleven panels did I want".
       */}
+      <Autostart projectId={project.id} pending={setupPending} />
+
       <section id="step-inbox" className="card stack">
         <h2>
           1 · מה מחכה לך{" "}
