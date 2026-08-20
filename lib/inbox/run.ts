@@ -10,6 +10,7 @@ import { db, files, messages, outreach, projects, requirements, supplierLeads, s
 import { getSettings } from "../settings";
 import { triageAndPark } from "./autopilot";
 import { analyseReply } from "./classify";
+import { findStrayReplies } from "./sweep";
 import { downloadAttachment, inboundOnThread } from "./fetch";
 
 export interface InboxResult {
@@ -56,6 +57,22 @@ export async function pollInbox(projectId: string): Promise<InboxResult> {
       ),
     );
 
+  /*
+   * Threads a supplier started on their own side. Adding them to the same walk
+   * means everything downstream - attachments, triage, replies - works exactly
+   * as it does for a thread we opened, rather than needing a second path.
+   */
+  const knownIdsForSweep = await db
+    .select({ id: messages.gmailMessageId })
+    .from(messages)
+    .where(eq(messages.projectId, projectId));
+
+  const strays = await findStrayReplies(
+    projectId,
+    mailbox,
+    new Set(knownIdsForSweep.map((m) => m.id)),
+  );
+
   const known = await db
     .select({ id: messages.gmailMessageId })
     .from(messages)
@@ -68,6 +85,15 @@ export async function pollInbox(projectId: string): Promise<InboxResult> {
     .where(eq(requirements.projectId, projectId));
   const requirementTexts = projectRequirements.map((r) => r.text);
 
+  const strayThreads = new Map<string, { threadId: string; supplierId: string }>();
+  for (const stray of strays) {
+    if (threads.some((t) => t.threadId === stray.gmailThreadId)) continue;
+    strayThreads.set(stray.gmailThreadId, {
+      threadId: stray.gmailThreadId,
+      supplierId: stray.supplierId,
+    });
+  }
+
   const result: InboxResult = {
     threadsChecked: 0,
     newMessages: 0,
@@ -77,7 +103,20 @@ export async function pollInbox(projectId: string): Promise<InboxResult> {
     errors: [],
   };
 
-  for (const thread of threads) {
+  const walk: { threadId: string | null; supplierId: string; outreachId: string | null }[] = [
+    ...threads.map((t) => ({
+      threadId: t.threadId,
+      supplierId: t.supplierId,
+      outreachId: t.outreachId as string | null,
+    })),
+    ...[...strayThreads.values()].map((t) => ({
+      threadId: t.threadId,
+      supplierId: t.supplierId,
+      outreachId: null,
+    })),
+  ];
+
+  for (const thread of walk) {
     if (!thread.threadId) continue;
     result.threadsChecked++;
 
@@ -187,10 +226,12 @@ export async function pollInbox(projectId: string): Promise<InboxResult> {
       // An auto-reply is not a reply. Marking the thread "replied" on an out of
       // office would take the supplier off the follow-up list for nothing.
       if (classification !== "not_relevant") {
-        await db
-          .update(outreach)
-          .set({ status: "replied" })
-          .where(eq(outreach.id, thread.outreachId));
+        if (thread.outreachId) {
+          await db
+            .update(outreach)
+            .set({ status: "replied" })
+            .where(eq(outreach.id, thread.outreachId));
+        }
 
         await db
           .update(supplierLeads)

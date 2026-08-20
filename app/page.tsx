@@ -3,6 +3,7 @@ import { desc } from "drizzle-orm";
 import { db, projects } from "@/lib/db";
 import {
   ACTIVITY_COLOUR,
+  ACTIVITY_HINT,
   ACTIVITY_LABEL,
   projectStatuses,
 } from "@/lib/project-status";
@@ -72,11 +73,16 @@ export default async function ProjectsPage() {
                           className="tag"
                           style={{ color: ACTIVITY_COLOUR[status.activity] }}
                           title={
-                            status.lastActivity
-                              ? `פעילות אחרונה ${when(status.lastActivity)}`
-                              : "עוד לא נשלח דבר"
+                            ACTIVITY_HINT[status.activity] +
+                            (status.lastActivity
+                              ? ` · פעילות אחרונה ${when(status.lastActivity)}`
+                              : "")
                           }
                         >
+                          <span
+                            className="status-dot"
+                            style={{ background: ACTIVITY_COLOUR[status.activity] }}
+                          />
                           {ACTIVITY_LABEL[status.activity]}
                           {status.activity === "needs_you" && ` (${status.openQuestions})`}
                           {status.activity === "running" && ` (${status.liveThreads})`}

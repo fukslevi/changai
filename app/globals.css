@@ -8,6 +8,14 @@
   --accent-soft: #eef4ff;
   --danger: #c0392b;
   --ok: #1a7f4b;
+  --warn: #b46b00;
+  /* Components were written against --bad, which never existed - every red tag
+     was rendering in the inherited colour. Alias rather than rename, so both
+     names keep working. */
+  --bad: #c0392b;
+  --line: #e3e2dd;
+  --card: #ffffff;
+  --fg: #1a1a18;
   --radius: 8px;
 }
 
@@ -22,6 +30,11 @@
     --accent-soft: #1c2740;
     --danger: #ef6f61;
     --ok: #4ec38a;
+    --warn: #d99b3a;
+    --bad: #ef6f61;
+    --line: #333338;
+    --card: #1f1f23;
+    --fg: #ececee;
   }
 }
 
@@ -285,3 +298,15 @@ ol {
 }
 
 .empty { text-align: center; }
+
+/* Status dot: colour first, words second. A list is scanned, not read. */
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-inline-end: 6px;
+  vertical-align: middle;
+  flex: none;
+}
+.tag .status-dot { margin-inline-end: 5px; }

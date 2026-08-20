@@ -14,7 +14,7 @@ import { inArray } from "drizzle-orm";
 import { db, messages, outreach, projects } from "./db";
 import { pendingQuestions } from "./questions";
 
-export type Activity = "needs_you" | "running" | "ready_to_send" | "draft" | "idle";
+export type Activity = "needs_you" | "running" | "ready_to_send" | "draft" | "stopped";
 
 export interface ProjectStatus {
   id: string;
@@ -33,15 +33,31 @@ export const ACTIVITY_LABEL: Record<Activity, string> = {
   running: "פעיל",
   ready_to_send: "מוכן לשליחה",
   draft: "טיוטה",
-  idle: "רדום",
+  stopped: "עצר",
 };
 
+/**
+ * Three states an operator scanning a list actually acts on: green means it is
+ * moving without you, amber means it stopped and you are the reason, red means
+ * it stopped and will not restart by itself. Blue and grey are the two that
+ * have not begun yet.
+ */
 export const ACTIVITY_COLOUR: Record<Activity, string> = {
-  needs_you: "var(--bad)",
+  needs_you: "var(--warn)",
   running: "var(--ok)",
   ready_to_send: "var(--accent)",
   draft: "var(--muted)",
-  idle: "var(--muted)",
+  stopped: "var(--bad)",
+};
+
+export const ACTIVITY_DOT: Record<Activity, string> = ACTIVITY_COLOUR;
+
+export const ACTIVITY_HINT: Record<Activity, string> = {
+  needs_you: "עצר עד שתענה על שאלה פתוחה",
+  running: "רץ לבד - שיחות פתוחות, אין חסימה",
+  ready_to_send: "יש RFQ, טרם נשלח לספקים",
+  draft: "עוד לא הועלה RFQ",
+  stopped: "אין שיחה חיה ואין מה לשלוח - לא ימשיך מעצמו",
 };
 
 /**
@@ -92,7 +108,7 @@ export async function projectStatuses(
     else if (live > 0) activity = "running";
     else if (sent.length === 0 && project.sourceRfqFile) activity = "ready_to_send";
     else if (sent.length === 0) activity = "draft";
-    else activity = "idle";
+    else activity = "stopped";
 
     out.set(project.id, {
       id: project.id,

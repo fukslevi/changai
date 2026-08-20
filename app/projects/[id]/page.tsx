@@ -16,7 +16,12 @@ import { campaignStatus } from "@/lib/outreach/batch";
 import { projectPricing } from "@/lib/pricing/project";
 import { conversations } from "@/lib/inbox/run";
 import { pendingQuestions } from "@/lib/questions";
-import { ACTIVITY_COLOUR, ACTIVITY_LABEL, projectStatuses } from "@/lib/project-status";
+import {
+  ACTIVITY_COLOUR,
+  ACTIVITY_HINT,
+  ACTIVITY_LABEL,
+  projectStatuses,
+} from "@/lib/project-status";
 import { ABSOLUTE_LIMITS, loadMandate } from "@/lib/negotiate/mandate";
 
 export const dynamic = "force-dynamic";
@@ -142,7 +147,15 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
               >
                 {status.autonomous ? "אוטונומי" : "מלווה"}
               </span>
-              <span className="tag" style={{ color: ACTIVITY_COLOUR[status.activity] }}>
+              <span
+                className="tag"
+                style={{ color: ACTIVITY_COLOUR[status.activity] }}
+                title={ACTIVITY_HINT[status.activity]}
+              >
+                <span
+                  className="status-dot"
+                  style={{ background: ACTIVITY_COLOUR[status.activity] }}
+                />
                 {ACTIVITY_LABEL[status.activity]}
                 {status.activity === "needs_you" && ` (${status.openQuestions})`}
                 {status.activity === "running" && ` (${status.liveThreads})`}
