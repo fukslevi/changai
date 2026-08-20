@@ -452,6 +452,63 @@ export const openQuestions = pgTable(
   (t) => [index("open_questions_project_idx").on(t.projectId, t.status)],
 );
 
+/**
+ * A supplier's numbers as they stated them, whether or not they work.
+ *
+ * Separate from the `quotes` table, which models a negotiated quotation with
+ * options and line items. This is the raw reading of one message: what they
+ * said, what they proposed instead, and whether they refused the target. It is
+ * kept for every reply that carries pricing, including refusals, because the
+ * supplier who says no is often the one telling you where the floor really is.
+ */
+export const quoteReadings = pgTable(
+  "quote_readings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    supplierId: uuid("supplier_id")
+      .notNull()
+      .references(() => suppliers.id),
+    /** The reply this was read from. */
+    messageId: uuid("message_id").references(() => messages.id, { onDelete: "cascade" }),
+
+    currency: text("currency").notNull().default("USD"),
+    incoterm: text("incoterm"),
+    incotermPlace: text("incoterm_place"),
+    lines: jsonb("lines")
+      .$type<{ item_name: string; qty: number | null; unit_price: number | null; spec_note: string | null }[]>()
+      .notNull()
+      .default([]),
+
+    moq: integer("moq"),
+    leadTimeDays: integer("lead_time_days"),
+    paymentTerms: text("payment_terms"),
+    samplePrice: numeric("sample_price", { precision: 10, scale: 2 }).$type<string>(),
+    sampleLeadTimeDays: integer("sample_lead_time_days"),
+    toolingCost: numeric("tooling_cost", { precision: 10, scale: 2 }).$type<string>(),
+    certificates: jsonb("certificates").$type<string[]>().notNull().default([]),
+
+    unitsPerCarton: integer("units_per_carton"),
+    cartonDimensionsCm: text("carton_dimensions_cm"),
+    cartonGrossWeightKg: numeric("carton_gross_weight_kg", { precision: 8, scale: 2 }).$type<string>(),
+
+    /** Where their offer differs from what we asked for. */
+    deviations: jsonb("deviations")
+      .$type<{ our_requirement: string; what_they_offer: string; their_reason: string | null }[]>()
+      .notNull()
+      .default([]),
+
+    rejectsTargetPrice: boolean("rejects_target_price").notNull().default(false),
+    priceObjection: text("price_objection"),
+    summaryHe: text("summary_he"),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("quote_readings_project_idx").on(t.projectId, t.supplierId)],
+);
+
 /* ── Quotes ───────────────────────────────────────────────────────────────── */
 
 export const quotes = pgTable(

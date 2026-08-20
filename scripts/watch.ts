@@ -16,7 +16,7 @@
  * runs around the clock, so the queue is always current when you open it.
  */
 import { db, projects } from "../lib/db";
-import { runAutopilot, triageAndPark, withinSupplierHours } from "../lib/inbox/autopilot";
+import { runAutopilot, triageAndPark, withinSendingHours, withinSupplierHours } from "../lib/inbox/autopilot";
 import { runFollowUps } from "../lib/inbox/followup";
 import { runCampaign } from "../lib/outreach/campaign";
 import { pollInbox } from "../lib/inbox/run";
@@ -43,8 +43,10 @@ async function cycle(send: boolean): Promise<void> {
 
       // Triage runs even with no new mail: a question answered since the last
       // pass can release a thread that was waiting on it.
-      const canSend = send && withinSupplierHours();
-      const result = canSend
+      // Replies wait for their working day; first contact only waits for ours.
+      const canReply = send && withinSupplierHours();
+      const canContact = send && withinSendingHours();
+      const result = canReply
         ? await runAutopilot(project.id)
         : await triageAndPark(project.id);
 
@@ -57,13 +59,13 @@ async function cycle(send: boolean): Promise<void> {
       }
       // Chasing the silent half is the other half of the job. Without it a
       // thread that never got an answer looks the same as one still in play.
-      const chases = await runFollowUps(project.id, { send: canSend });
+      const chases = await runFollowUps(project.id, { send: canReply });
       for (const c of chases.chased) {
         console.log(`${stamp()}  ↻ תזכורת ${c.attempt} ל-${c.company}`);
       }
       for (const c of chases.closed) console.log(`${stamp()}  × נסגר ללא מענה: ${c.company}`);
 
-      if (canSend) {
+      if (canContact) {
         const campaign = await runCampaign(project.id);
         for (const name of campaign.sent) console.log(`${stamp()}  ✉ פנייה ראשונה: ${name}`);
         if (campaign.remaining > 0) {

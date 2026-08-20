@@ -245,13 +245,30 @@ export async function planReply(
 }
 
 /**
- * Business hours in China, so a reply does not land at three in the morning.
+ * Whether now is a reasonable hour to send.
  *
- * Not a disguise - a company that answers instantly at any hour is simply not
- * how trade works, and mail sent at odd hours is treated worse by filters.
+ * The first version of this used Chinese business hours, which was modelling
+ * the wrong person's clock. The sender is in Israel. An Israeli company writing
+ * at two in the afternoon is writing at seven in the evening Chinese time, and
+ * that is not a machine giving itself away - it is what working across six time
+ * zones looks like to everyone who does it.
+ *
+ * So the window is the sender's own working day, which is honest and happens to
+ * be wide. What it still excludes is the middle of the night here, because mail
+ * sent at 3am local is mail no human could have written.
+ */
+export function withinSendingHours(now = new Date()): boolean {
+  // Israel is UTC+3 in summer, UTC+2 in winter; +3 is close enough for a bound
+  // this loose, and erring later in the day is the harmless direction.
+  const hour = (now.getUTCHours() + 3) % 24;
+  return hour >= 7 && hour < 22;
+}
+
+/**
+ * Kept for replies inside a live conversation, where landing near the top of
+ * their inbox during their working day is worth a few hours' wait.
  */
 export function withinSupplierHours(now = new Date()): boolean {
-  // China Standard Time is UTC+8 year round.
   const hour = (now.getUTCHours() + 8) % 24;
   const day = new Date(now.getTime() + 8 * 3600_000).getUTCDay();
   if (day === 0 || day === 6) return false;
@@ -371,9 +388,13 @@ export async function runAutopilot(
       continue;
     }
 
-    // Even a full mandate runs out. A conversation that has gone round several
-    // times is not going to be closed by one more email from a machine.
-    if (isJudgement && (await roundsSoFar(projectId, message.supplierId)) >= mandate.maxRounds) {
+    /*
+     * The cap applies to every exchange, not only the contested ones. It used
+     * to guard price talk alone, which left routine back-and-forth - one more
+     * clarification, one more missing field - free to run forever against a
+     * supplier who was never going to quote.
+     */
+    if ((await roundsSoFar(projectId, message.supplierId)) >= mandate.maxRounds) {
       result.heldForHuman.push({
         company,
         reason: `${mandate.maxRounds} סבבים בלי סיכום - הועבר אליך`,

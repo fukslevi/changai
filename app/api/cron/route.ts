@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db, projects } from "@/lib/db";
-import { runAutopilot, triageAndPark, withinSupplierHours } from "@/lib/inbox/autopilot";
+import { runAutopilot, triageAndPark, withinSendingHours, withinSupplierHours } from "@/lib/inbox/autopilot";
 import { runFollowUps } from "@/lib/inbox/followup";
 import { runCampaign } from "@/lib/outreach/campaign";
 import { markCycleRun } from "@/lib/settings";
@@ -45,21 +45,23 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const canSend = withinSupplierHours();
+  // Replies wait for their working day; first contact only waits for ours.
+  const canReply = withinSupplierHours();
+  const canContact = withinSendingHours();
   const summary: Record<string, unknown>[] = [];
 
   for (const project of await db.select().from(projects)) {
     try {
       const inbox = await pollInbox(project.id);
-      const work = canSend
+      const work = canReply
         ? await runAutopilot(project.id)
         : await triageAndPark(project.id);
-      const chases = await runFollowUps(project.id, { send: canSend });
+      const chases = await runFollowUps(project.id, { send: canReply });
 
       // First contact goes out on the same schedule as everything else. A
       // project that is ready to write to suppliers and simply waits is not
       // autonomous, whatever the setting says.
-      const campaign = canSend
+      const campaign = canContact
         ? await runCampaign(project.id)
         : { sent: [], failed: [], remaining: 0, skipped: "outside sending hours" };
 
@@ -87,5 +89,5 @@ export async function GET(request: Request) {
   // it found work.
   await markCycleRun();
 
-  return NextResponse.json({ sendingWindow: canSend, projects: summary });
+  return NextResponse.json({ replyWindow: canReply, contactWindow: canContact, projects: summary });
 }

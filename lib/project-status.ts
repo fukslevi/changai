@@ -108,6 +108,8 @@ export async function projectStatuses(
       .map((m) => m.receivedAt)
       .sort((a, b) => b.getTime() - a.getTime())[0];
 
+    const repliedCount = sent.filter((o) => o.status === "replied").length;
+
     // Commercial gaps are derived, so the count comes from the same place the
     // project page uses rather than from a second, divergent rule.
     const { open } = await pendingQuestions(project.id);
@@ -135,9 +137,18 @@ export async function projectStatuses(
       nextAction = `שולח פנייה ראשונה ל-${approved} ספקים במחזורים הקרובים`;
     } else if (live > 0) {
       activity = "running";
+      /*
+       * A stage that finishes should say so. "12 conversations open" reads the
+       * same on the day the last email went out and three weeks later when
+       * everyone has answered - and the difference is the whole question of
+       * whether this project still needs watching.
+       */
+      const awaitingThem = live - repliedCount;
       nextAction = autonomous
-        ? `${live} שיחות פתוחות - נענות אוטומטית`
-        : `${live} שיחות פתוחות`;
+        ? awaitingThem > 0
+          ? `כל הספקים קיבלו פנייה · ${repliedCount} ענו, ${awaitingThem} טרם · תזכורות אוטומטיות`
+          : `כל ${live} הספקים ענו · השיחות נענות אוטומטית`
+        : `${live} שיחות פתוחות, ${repliedCount} ענו`;
     } else if (approved > 0) {
       activity = "ready_to_send";
       nextAction = `${approved} ספקים מאושרים, ממתינים שתשלח`;

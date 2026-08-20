@@ -6,11 +6,23 @@
  * to the wrong project.
  */
 import { and, eq, inArray } from "drizzle-orm";
-import { db, files, messages, outreach, projects, requirements, supplierLeads, suppliers } from "../db";
+import {
+  db,
+  files,
+  messages,
+  outreach,
+  projects,
+  quoteReadings,
+  requirements,
+  supplierLeads,
+  suppliers,
+} from "../db";
 import { getSettings } from "../settings";
 import { triageAndPark } from "./autopilot";
 import { analyseReply } from "./classify";
 import { findStrayReplies } from "./sweep";
+import { attachmentBlocks } from "../quotes/context";
+import { extractQuote } from "../quotes/extract";
 import { downloadAttachment, inboundOnThread } from "./fetch";
 
 export interface InboxResult {
@@ -20,6 +32,8 @@ export interface InboxResult {
   needsHuman: number;
   /** Questions raised that only a person can answer. */
   parked: number;
+  /** Replies whose numbers were recorded, refusals included. */
+  quotesRead: number;
   errors: string[];
 }
 
@@ -100,6 +114,7 @@ export async function pollInbox(projectId: string): Promise<InboxResult> {
     classified: 0,
     needsHuman: 0,
     parked: 0,
+    quotesRead: 0,
     errors: [],
   };
 
@@ -222,6 +237,66 @@ export async function pollInbox(projectId: string): Promise<InboxResult> {
         .onConflictDoNothing();
 
       seen.add(message.gmailMessageId);
+
+      /*
+       * Read the numbers, whatever the classification says. A refusal carries
+       * pricing surprisingly often - "not even at double" is a data point about
+       * the floor - and a reply parked for a person still deserves to appear in
+       * the comparison rather than waiting for someone to open it.
+       */
+      if (classification !== "not_relevant") {
+        try {
+          const blocks = await attachmentBlocks(stored);
+          const { quote } = await extractQuote(
+            project.name,
+            requirementTexts,
+            {
+              fromAddress: message.fromAddress,
+              subject: message.subject,
+              bodyText: message.bodyText,
+            },
+            blocks as never,
+          );
+
+          if (quote.has_pricing || quote.rejects_target_price || quote.deviations.length > 0) {
+            const [row] = await db
+              .select({ id: messages.id })
+              .from(messages)
+              .where(eq(messages.gmailMessageId, message.gmailMessageId))
+              .limit(1);
+
+            await db.insert(quoteReadings).values({
+              projectId,
+              supplierId: thread.supplierId,
+              messageId: row?.id ?? null,
+              currency: quote.currency,
+              incoterm: quote.incoterm,
+              incotermPlace: quote.incoterm_place,
+              lines: quote.lines,
+              moq: quote.moq,
+              leadTimeDays: quote.lead_time_days,
+              paymentTerms: quote.payment_terms,
+              samplePrice: quote.sample_price === null ? null : String(quote.sample_price),
+              sampleLeadTimeDays: quote.sample_lead_time_days,
+              toolingCost: quote.tooling_cost === null ? null : String(quote.tooling_cost),
+              certificates: quote.certificates,
+              unitsPerCarton: quote.units_per_carton,
+              cartonDimensionsCm: quote.carton_dimensions_cm,
+              cartonGrossWeightKg:
+                quote.carton_gross_weight_kg === null ? null : String(quote.carton_gross_weight_kg),
+              deviations: quote.deviations,
+              rejectsTargetPrice: quote.rejects_target_price,
+              priceObjection: quote.price_objection,
+              summaryHe: quote.summary_he,
+            });
+            result.quotesRead++;
+          }
+        } catch (err) {
+          result.errors.push(
+            `quote ${message.gmailMessageId}: ${err instanceof Error ? err.message : err}`,
+          );
+        }
+      }
 
       // An auto-reply is not a reply. Marking the thread "replied" on an out of
       // office would take the supplier off the follow-up list for nothing.

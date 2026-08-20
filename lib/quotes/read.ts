@@ -45,6 +45,29 @@ function spreadsheetToText(content: Buffer): string {
 const SPREADSHEET = /\.(xlsx|xlsm|xls|csv|ods)$/i;
 const IMAGE = /\.(png|jpe?g|gif|webp)$/i;
 
+/**
+ * The real type, from the bytes.
+ *
+ * Mail clients declare whatever they like. Two of these arrived tagged
+ * image/png and were JPEG, and the API rejects the mismatch outright - so the
+ * attachment was lost over a label rather than over its contents.
+ */
+function sniffImage(content: Buffer): string | null {
+  if (content.length < 12) return null;
+  if (content[0] === 0x89 && content[1] === 0x50 && content[2] === 0x4e && content[3] === 0x47) {
+    return "image/png";
+  }
+  if (content[0] === 0xff && content[1] === 0xd8 && content[2] === 0xff) return "image/jpeg";
+  if (content.subarray(0, 3).toString("latin1") === "GIF") return "image/gif";
+  if (
+    content.subarray(0, 4).toString("latin1") === "RIFF" &&
+    content.subarray(8, 12).toString("latin1") === "WEBP"
+  ) {
+    return "image/webp";
+  }
+  return null;
+}
+
 export function readAttachment(
   filename: string,
   mimeType: string,
@@ -70,8 +93,11 @@ export function readAttachment(
   }
 
   if (IMAGE.test(filename) || mimeType.startsWith("image/")) {
-    const media = mimeType.startsWith("image/") ? mimeType : "image/png";
-    return { kind: "image", base64: content.toString("base64"), mediaType: media };
+    const sniffed = sniffImage(content);
+    if (!sniffed) {
+      return { kind: "unsupported", note: `לא זוהה פורמט תמונה תקין ב-${filename}` };
+    }
+    return { kind: "image", base64: content.toString("base64"), mediaType: sniffed };
   }
 
   if (mimeType.startsWith("text/")) {
