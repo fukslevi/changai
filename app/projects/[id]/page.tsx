@@ -261,6 +261,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           hasAttachment={projectFiles.some((f) => f.kind === "rfq")}
           hasEmail={Boolean(project.outreachSubject && project.outreachBody)}
           missingCommercials={pricing.ready ? [] : pricing.missing}
+          autonomous={project.autonomyTier >= 3}
         />
         </details>
       </section>

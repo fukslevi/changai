@@ -18,6 +18,7 @@
 import { db, projects } from "../lib/db";
 import { runAutopilot, triageAndPark, withinSupplierHours } from "../lib/inbox/autopilot";
 import { runFollowUps } from "../lib/inbox/followup";
+import { runCampaign } from "../lib/outreach/campaign";
 import { pollInbox } from "../lib/inbox/run";
 
 const DEFAULT_MINUTES = 15;
@@ -61,6 +62,14 @@ async function cycle(send: boolean): Promise<void> {
         console.log(`${stamp()}  ↻ תזכורת ${c.attempt} ל-${c.company}`);
       }
       for (const c of chases.closed) console.log(`${stamp()}  × נסגר ללא מענה: ${c.company}`);
+
+      if (canSend) {
+        const campaign = await runCampaign(project.id);
+        for (const name of campaign.sent) console.log(`${stamp()}  ✉ פנייה ראשונה: ${name}`);
+        if (campaign.remaining > 0) {
+          console.log(`${stamp()}  ${campaign.remaining} ספקים ממתינים לפנייה`);
+        }
+      }
 
       if (send && !withinSupplierHours() && result.readyToSend.length > 0) {
         console.log(

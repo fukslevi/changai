@@ -23,6 +23,8 @@ export interface CampaignProps {
    * to find out after eleven conversations that the price was never achievable.
    */
   missingCommercials: string[];
+  /** Autonomous projects do not ask for the typed phrase. */
+  autonomous: boolean;
 }
 
 /**
@@ -45,6 +47,7 @@ export function Campaign({
   hasAttachment,
   hasEmail,
   missingCommercials,
+  autonomous,
 }: CampaignProps) {
   const [confirmation, setConfirmation] = useState("");
   const [running, setRunning] = useState(false);
@@ -103,7 +106,7 @@ export function Campaign({
   }
 
   const noModel = missingCommercials.length > 0;
-  const armed = !noModel && confirmation.trim() === CAMPAIGN_CONFIRMATION;
+  const armed = !noModel && (autonomous || confirmation.trim() === CAMPAIGN_CONFIRMATION);
 
   return (
     <div className="stack" dir="rtl">
@@ -160,19 +163,25 @@ export function Campaign({
 
       {pending.length > 0 && (
         <div className="stack" style={{ gap: 8 }}>
-          <label className="stack" style={{ gap: 4 }}>
+          {autonomous ? (
             <span className="muted">
-              כתבו <strong>{CAMPAIGN_CONFIRMATION}</strong> כדי לאשר שליחה של{" "}
-              {pending.length} מיילים לחברות אמיתיות
+              הפרויקט במצב אוטונומי - השליחה תצא במחזור הבא בלי אישור נוסף.
             </span>
-            <input
-              value={confirmation}
-              onChange={(e) => setConfirmation(e.target.value)}
-              placeholder={CAMPAIGN_CONFIRMATION}
-              disabled={running}
-              style={{ width: 220 }}
-            />
-          </label>
+          ) : (
+            <label className="stack" style={{ gap: 4 }}>
+              <span className="muted">
+                כתבו <strong>{CAMPAIGN_CONFIRMATION}</strong> כדי לאשר שליחה של{" "}
+                {pending.length} מיילים לחברות אמיתיות
+              </span>
+              <input
+                value={confirmation}
+                onChange={(e) => setConfirmation(e.target.value)}
+                placeholder={CAMPAIGN_CONFIRMATION}
+                disabled={running}
+                style={{ width: 220 }}
+              />
+            </label>
+          )}
 
           <div className="row">
             <button type="button" onClick={run} disabled={!armed || running}>

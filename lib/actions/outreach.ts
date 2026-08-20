@@ -75,9 +75,20 @@ export async function sendNextOutreach(
 ): Promise<CampaignSendResult> {
   if (!projectId) return { error: "Missing project", remaining: 0, done: true };
 
-  // Typed by hand on the client before the first send. Real mail to real
-  // companies deserves a deliberate act, not one misplaced click.
-  if (confirmation !== CAMPAIGN_CONFIRMATION) {
+  /*
+   * The typed phrase exists so a first send is a deliberate act rather than a
+   * misplaced click. On an autonomous project that act already happened - it
+   * was the decision to turn autonomy on - and asking again turns the whole
+   * mode into a button that says "automatic" and then waits.
+   *
+   * The gates that matter are unchanged either way: a walk-away price must
+   * exist, only approved suppliers are written to, and nobody is written to
+   * twice.
+   */
+  const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+  const autonomous = (project?.autonomyTier ?? 1) >= 3;
+
+  if (!autonomous && confirmation !== CAMPAIGN_CONFIRMATION) {
     return { error: "השליחה לא אושרה", remaining: 0, done: true };
   }
 

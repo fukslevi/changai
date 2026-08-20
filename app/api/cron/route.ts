@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db, projects } from "@/lib/db";
 import { runAutopilot, triageAndPark, withinSupplierHours } from "@/lib/inbox/autopilot";
 import { runFollowUps } from "@/lib/inbox/followup";
+import { runCampaign } from "@/lib/outreach/campaign";
 import { pollInbox } from "@/lib/inbox/run";
 
 /**
@@ -54,6 +55,13 @@ export async function GET(request: Request) {
         : await triageAndPark(project.id);
       const chases = await runFollowUps(project.id, { send: canSend });
 
+      // First contact goes out on the same schedule as everything else. A
+      // project that is ready to write to suppliers and simply waits is not
+      // autonomous, whatever the setting says.
+      const campaign = canSend
+        ? await runCampaign(project.id)
+        : { sent: [], failed: [], remaining: 0, skipped: "outside sending hours" };
+
       summary.push({
         project: project.name,
         newMessages: inbox.newMessages,
@@ -62,6 +70,8 @@ export async function GET(request: Request) {
         heldForHuman: work.heldForHuman.length,
         chased: chases.chased.length,
         closed: chases.closed.length,
+        firstContacts: campaign.sent.length,
+        stillToContact: campaign.remaining,
         errors: inbox.errors,
       });
     } catch (err) {
