@@ -109,8 +109,15 @@ export const projects = pgTable("projects", {
    * the party who benefits from it.
    */
   allowSpecSubstitution: boolean("allow_spec_substitution").notNull().default(false),
-  /** Rounds of back-and-forth before the thread is handed over regardless. */
-  maxNegotiationRounds: integer("max_negotiation_rounds").notNull().default(4),
+  /**
+   * A circuit breaker, not a conversation policy.
+   *
+   * It exists so a thread that is going nowhere cannot bill forever, not to cut
+   * off a negotiation that is working - so it sits well above the length of any
+   * real exchange. Four was too low: it would have handed over a productive
+   * conversation mid-sentence.
+   */
+  maxNegotiationRounds: integer("max_negotiation_rounds").notNull().default(10),
 
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

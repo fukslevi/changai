@@ -61,9 +61,7 @@ export async function GET(request: Request) {
       // First contact goes out on the same schedule as everything else. A
       // project that is ready to write to suppliers and simply waits is not
       // autonomous, whatever the setting says.
-      const campaign = canContact
-        ? await runCampaign(project.id)
-        : { sent: [], failed: [], remaining: 0, skipped: "outside sending hours" };
+      const campaign = await runCampaign(project.id);
 
       summary.push({
         project: project.name,
@@ -75,6 +73,7 @@ export async function GET(request: Request) {
         closed: chases.closed.length,
         firstContacts: campaign.sent.length,
         stillToContact: campaign.remaining,
+        campaignSkipped: campaign.skipped,
         errors: inbox.errors,
       });
     } catch (err) {

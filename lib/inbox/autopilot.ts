@@ -245,23 +245,19 @@ export async function planReply(
 }
 
 /**
- * Whether now is a reasonable hour to send.
+ * First contact has no window at all.
  *
- * The first version of this used Chinese business hours, which was modelling
- * the wrong person's clock. The sender is in Israel. An Israeli company writing
- * at two in the afternoon is writing at seven in the evening Chinese time, and
- * that is not a machine giving itself away - it is what working across six time
- * zones looks like to everyone who does it.
+ * Two versions of this were wrong in the same way: both asked when it is
+ * decent for us to press send, when the only thing that matters is when it
+ * lands. The recipients are in China. Israeli night is the Chinese working
+ * morning - a message sent here at 3am arrives there at 8am, at the top of the
+ * inbox, which is the best moment it could possibly arrive.
  *
- * So the window is the sender's own working day, which is honest and happens to
- * be wide. What it still excludes is the middle of the night here, because mail
- * sent at 3am local is mail no human could have written.
+ * A restriction that delays a cold email by six hours to protect an appearance
+ * nobody is looking at is a restriction that costs six hours.
  */
-export function withinSendingHours(now = new Date()): boolean {
-  // Israel is UTC+3 in summer, UTC+2 in winter; +3 is close enough for a bound
-  // this loose, and erring later in the day is the harmless direction.
-  const hour = (now.getUTCHours() + 3) % 24;
-  return hour >= 7 && hour < 22;
+export function withinSendingHours(): boolean {
+  return true;
 }
 
 /**

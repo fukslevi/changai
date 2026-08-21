@@ -12,6 +12,8 @@ import { Commercials } from "./Commercials";
 import { OpenQuestions } from "./OpenQuestions";
 import { SideNav, type NavSection } from "./SideNav";
 import { Autostart } from "./Autostart";
+import { Comparison } from "./Comparison";
+import { buildComparison } from "@/lib/quotes/compare";
 import { Autonomy } from "./Autonomy";
 import { campaignStatus } from "@/lib/outreach/batch";
 import { projectPricing } from "@/lib/pricing/project";
@@ -61,6 +63,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const campaign = await campaignStatus(id);
   const pricing = await projectPricing(id);
   const mandate = await loadMandate(id);
+  const comparison = await buildComparison(id);
 
   const { open, answered } = await pendingQuestions(id);
   // Same source as the list page, so the two views can never disagree about
@@ -131,6 +134,11 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const navSections: NavSection[] = [
     { id: "step-inbox", label: "מה מחכה לך", count: open.length, urgent: open.length > 0 },
     { id: "step-talks", label: "שיחות עם ספקים", count: repliedCount },
+    {
+      id: "step-quotes",
+      label: "הצעות מחיר",
+      count: comparison.suppliers.length,
+    },
     { id: "step-suppliers", label: "ספקים", count: leads.length },
     { id: "step-product", label: "המוצר", dimmed: !parsed },
     { id: "step-settings", label: "הגדרות" },
@@ -242,9 +250,20 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         <Conversations projectId={project.id} threads={threads} />
       </section>
 
+      <section id="step-quotes" className="card stack">
+        <h2>
+          3 · הצעות מחיר{" "}
+          <span className="muted" style={{ fontSize: 14 }}>
+            ({comparison.suppliers.length})
+          </span>
+        </h2>
+        <Guide k="comparison" />
+        <Comparison data={comparison} />
+      </section>
+
       <section id="step-suppliers" className="card stack">
         <h2>
-          3 · ספקים <span className="muted" style={{ fontSize: 14 }}>({leads.length})</span>
+          4 · ספקים <span className="muted" style={{ fontSize: 14 }}>({leads.length})</span>
         </h2>
         <Guide k="suppliers" />
         <Suppliers projectId={project.id} leads={leads} />
@@ -274,7 +293,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       </section>
 
       <section id="step-product" className="card stack">
-        <h2>4 · המוצר</h2>
+        <h2>5 · המוצר</h2>
         {projectFiles.length === 0 ? (
           <p className="muted" dir="rtl">
             עדיין לא הועלה RFQ. כל המפרט, מחירי המטרה ומדרגות הכמות נקראים ממנו - אפשר להתחיל
@@ -400,7 +419,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       </section>
 
       <section id="step-settings" className="card stack">
-        <h2>5 · הגדרות</h2>
+        <h2>6 · הגדרות</h2>
 <details open>
           <summary>
             <h2 style={{ display: "inline", fontSize: 16 }}>
