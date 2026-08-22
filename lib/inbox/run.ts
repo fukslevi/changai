@@ -301,11 +301,28 @@ export async function pollInbox(projectId: string): Promise<InboxResult> {
       // An auto-reply is not a reply. Marking the thread "replied" on an out of
       // office would take the supplier off the follow-up list for nothing.
       if (classification !== "not_relevant") {
+        /*
+         * A reply that arrived on a thread the supplier started has no outreach
+         * row of its own, and skipping the update left two sources of truth
+         * disagreeing: the mailbox knew Wellmade had answered, the status line
+         * said nobody had. Fall back to the supplier's row for this project.
+         */
         if (thread.outreachId) {
           await db
             .update(outreach)
             .set({ status: "replied" })
             .where(eq(outreach.id, thread.outreachId));
+        } else {
+          await db
+            .update(outreach)
+            .set({ status: "replied" })
+            .where(
+              and(
+                eq(outreach.projectId, projectId),
+                eq(outreach.supplierId, thread.supplierId),
+                eq(outreach.status, "sent"),
+              ),
+            );
         }
 
         await db

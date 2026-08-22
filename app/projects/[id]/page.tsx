@@ -119,12 +119,21 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const ballWithUs = threads.filter(
     (t) => t.messages[t.messages.length - 1]?.direction === "inbound",
   );
-  const heldForHuman = ballWithUs.filter((t) => {
-    const last = t.messages[t.messages.length - 1];
-    return (
-      last?.analysis?.challenges_a_requirement === true || last?.classification === "quotation"
-    );
-  });
+  /*
+   * The same rule the autopilot uses, mandate included. The page had its own
+   * copy that predated autonomy, so a quotation showed as "only you can answer"
+   * on a project where the agent was already authorised to answer it - two
+   * rules for one decision, and the visible one was the wrong one.
+   */
+  const heldForHuman = mandate.mayNegotiatePrice
+    ? []
+    : ballWithUs.filter((t) => {
+        const last = t.messages[t.messages.length - 1];
+        return (
+          last?.analysis?.challenges_a_requirement === true ||
+          last?.classification === "quotation"
+        );
+      });
   const awaitingReply = ballWithUs.length - heldForHuman.length;
 
   const repliedCount = threads.filter((t) =>

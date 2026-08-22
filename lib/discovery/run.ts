@@ -21,6 +21,32 @@ const ENRICH_CONCURRENCY = 5;
  */
 const MIN_SCORE_TO_STORE = 20;
 
+/**
+ * How many usable leads a project should end up with.
+ *
+ * One search pass produced nine, which is a shortlist you can lose to four
+ * refusals. Reply rates on cold sourcing run around a third, and of those only
+ * some quote at all - so the number of conversations worth having is a fraction
+ * of a fraction, and the fraction has to start large enough.
+ */
+export const TARGET_LEADS = 30;
+
+/**
+ * Extra angles to search when the first pass falls short.
+ *
+ * A factory describes itself by material, process and market, and the operator's
+ * keywords usually cover only one of those. These add the others rather than
+ * repeating the same query with more pages, which returns the same companies.
+ */
+const BROADENING_SUFFIXES = [
+  "OEM factory",
+  "wholesale supplier China",
+  "manufacturer Alibaba",
+  "supplier export",
+  "factory price",
+  "custom manufacturer",
+];
+
 async function inBatches<T, R>(
   items: T[],
   size: number,
@@ -39,12 +65,44 @@ async function inBatches<T, R>(
  * Nothing here contacts anyone. Every lead lands as `pending` for the operator
  * to approve or reject; that gate is the whole point of the flow.
  */
-export async function runDiscovery(projectId: string): Promise<DiscoveryResult> {
+export async function runDiscovery(
+  projectId: string,
+  options: { target?: number } = {},
+): Promise<DiscoveryResult> {
   const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
   if (!project) throw new Error("Project not found");
   if (project.keywords.length === 0) throw new Error("Add keywords before running discovery");
 
-  const hits = await findCandidates(project.keywords);
+  const target = options.target ?? TARGET_LEADS;
+
+  /*
+   * Keep searching until the shortlist is big enough, widening the angle each
+   * round rather than digging deeper into the same query. Bounded: a product
+   * with few manufacturers should end with a short list, not an endless search.
+   */
+  const already = await db
+    .select({ domain: supplierLeads.domain })
+    .from(supplierLeads)
+    .where(eq(supplierLeads.projectId, projectId));
+
+  const seenDomains = new Set(already.map((r) => r.domain));
+  const hits: Awaited<ReturnType<typeof findCandidates>> = [];
+
+  for (let round = 0; round <= BROADENING_SUFFIXES.length; round++) {
+    if (seenDomains.size + hits.length >= target) break;
+
+    const keywords =
+      round === 0
+        ? project.keywords
+        : project.keywords.map((k) => `${k} ${BROADENING_SUFFIXES[round - 1]}`);
+
+    const found = await findCandidates(keywords);
+    for (const hit of found) {
+      if (seenDomains.has(hit.domain)) continue;
+      if (hits.some((h) => h.domain === hit.domain)) continue;
+      hits.push(hit);
+    }
+  }
 
   const enriched = await inBatches(hits, ENRICH_CONCURRENCY, async (hit) => ({
     hit,

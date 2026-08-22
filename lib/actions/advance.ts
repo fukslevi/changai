@@ -6,6 +6,7 @@ import { db, items, projects, requirements, supplierLeads } from "../db";
 import { runDiscovery } from "../discovery/run";
 import { buildOutreachEmail } from "../outreach/template";
 import { getSettings } from "../settings";
+import { approveAllAbove } from "./discovery";
 import { parseProjectRfq } from "./rfq";
 
 /**
@@ -56,9 +57,11 @@ async function nextStep(projectId: string): Promise<Step | null> {
   const leads = await db
     .select({ id: supplierLeads.id })
     .from(supplierLeads)
-    .where(eq(supplierLeads.projectId, projectId))
-    .limit(1);
+    .where(eq(supplierLeads.projectId, projectId));
 
+  // Searching again with the same keywords returns the same companies, so one
+  // short pass is not a reason to keep trying - the broadening happens inside
+  // runDiscovery, and it has already tried every angle it has.
   if (leads.length === 0) return "discover";
   return null;
 }
@@ -104,6 +107,20 @@ export async function advanceProject(
 
     if (step === "discover") {
       await runDiscovery(projectId);
+
+      /*
+       * On an autonomous project, approving is not a decision the operator was
+       * asked to make - they made it when they turned autonomy on. Leaving
+       * thirty leads pending would stop the chain one step before the point.
+       * Only leads with an address and a score worth writing to.
+       */
+      const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+      if (project && project.autonomyTier >= 3) {
+        const data = new FormData();
+        data.set("projectId", projectId);
+        data.set("threshold", "30");
+        await approveAllAbove({}, data);
+      }
     }
 
     revalidatePath(`/projects/${projectId}`);
