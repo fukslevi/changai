@@ -66,7 +66,7 @@ function segments(draft: string): string[] {
  * could pay for anything.
  */
 function highestCeiling(mandate: Mandate): number | null {
-  const all = mandate.ceilings.flatMap((c) => c.tiers.map((t) => t.walkAwayFob));
+  const all = mandate.ceilings.flatMap((c) => c.tiers.map((t) => t.ceiling));
   return all.length > 0 ? Math.max(...all) : null;
 }
 

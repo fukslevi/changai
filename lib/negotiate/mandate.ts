@@ -15,11 +15,20 @@
 import { eq } from "drizzle-orm";
 import { db, projects, requirements } from "../db";
 import { num } from "../pricing/landed";
-import { projectPricing, type TierWalkAway } from "../pricing/project";
+import { ACCEPTABLE_GAP_PCT, ceilingFor } from "../pricing/target";
+import { db as database, items } from "../db";
+
+export interface CeilingTier {
+  qty: number;
+  /** The RFQ's own number - what we open at. */
+  target: number;
+  /** Target plus the accepted gap. Never revealed to a supplier. */
+  ceiling: number;
+}
 
 export interface PriceCeiling {
   itemName: string;
-  tiers: TierWalkAway[];
+  tiers: CeilingTier[];
 }
 
 export interface Mandate {
@@ -61,11 +70,29 @@ export async function loadMandate(projectId: string): Promise<Mandate> {
   if (!project) throw new Error("Project not found");
 
   const tier = project.autonomyTier;
-  const pricing = await projectPricing(projectId);
 
-  const ceilings: PriceCeiling[] = pricing.products
-    .filter((p) => p.tiers.length > 0)
-    .map((p) => ({ itemName: p.name, tiers: p.tiers }));
+  /*
+   * The ceiling is the target plus the gap the operator is willing to close.
+   * No retail price, no fee stack, no freight estimate: the target already
+   * embeds all of it, and rebuilding it from parts only introduced a second,
+   * shakier answer to a question that was already settled.
+   */
+  const priced = await database.select().from(items).where(eq(items.projectId, projectId));
+
+  const ceilings: PriceCeiling[] = priced
+    .filter((item) => item.kind === "priced_variant" && item.targetPrices.length > 0)
+    .map((item) => ({
+      itemName: item.name,
+      tiers: item.targetPrices
+        .filter((p) => p.unit_price !== null && p.qty !== null)
+        .map((p) => ({
+          qty: p.qty as number,
+          target: p.unit_price as number,
+          ceiling: ceilingFor(p.unit_price as number),
+        }))
+        .sort((a, b) => a.qty - b.qty),
+    }))
+    .filter((c) => c.tiers.length > 0);
 
   /*
    * Compliance and safety requirements stay off the table by default. A
@@ -100,7 +127,7 @@ export async function loadMandate(projectId: string): Promise<Mandate> {
   // Negotiating without a ceiling is not negotiating, it is conceding slowly.
   const blockedReason =
     tier >= 3 && ceilings.length === 0
-      ? "אין מחיר walk-away - המודל הכלכלי חסר נתונים, ובלי תקרה אין על מה להתמקח"
+      ? "אין מחיר מטרה ב-RFQ - בלי תקרה אין על מה להתמקח"
       : null;
 
   return {
@@ -123,18 +150,19 @@ export function mandateBrief(mandate: Mandate): string {
   const lines: string[] = [
     "NEGOTIATION MANDATE",
     "",
-    "You may negotiate price and terms within these limits. Open at the RFQ",
-    "target price. Never reveal the ceiling - it is your walk-away, not an offer.",
+    "Your goal is to land as close to the target price as possible. Open at the",
+    "target. Never reveal the ceiling - it is your walk-away, not an offer.",
+    `A quote within ${ACCEPTABLE_GAP_PCT}% of target is worth taking forward; further`,
+    "away, keep working or say plainly that it is too far apart.",
     "",
     "PRICE CEILINGS (per unit, FOB, USD):",
   ];
 
   for (const ceiling of mandate.ceilings) {
     for (const tier of ceiling.tiers) {
-      const target = tier.rfqTargetFob === null ? "-" : `$${tier.rfqTargetFob.toFixed(2)}`;
       lines.push(
-        `- ${ceiling.itemName} at ${tier.qty} pcs: open at ${target}, ` +
-          `absolute maximum $${tier.walkAwayFob.toFixed(2)}`,
+        `- ${ceiling.itemName} at ${tier.qty} pcs: open at $${tier.target.toFixed(2)}, ` +
+          `absolute maximum $${tier.ceiling.toFixed(2)}`,
       );
     }
   }

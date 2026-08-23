@@ -10,8 +10,8 @@
  * because a list that never closes anything stops telling you how many live
  * conversations you actually have, which is the number the whole round is for.
  */
-import { and, asc, eq } from "drizzle-orm";
-import { db, messages, outreach, projects, suppliers } from "../db";
+import { and, asc, eq, isNotNull } from "drizzle-orm";
+import { db, messages, outreach, projects, supplierLeads, suppliers } from "../db";
 import { sendReply } from "./reply";
 
 /** Days of silence before the first chase, and again before the second. */
@@ -149,7 +149,21 @@ export async function runFollowUps(
   const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
   if (!project) throw new Error("Project not found");
 
-  const threads = await silentThreads(projectId);
+  const takenOver = new Set(
+    (
+      await db
+        .select({ supplierId: supplierLeads.supplierId })
+        .from(supplierLeads)
+        .where(
+          and(eq(supplierLeads.projectId, projectId), isNotNull(supplierLeads.takenOverAt)),
+        )
+    ).map((r) => r.supplierId),
+  );
+
+  // A thread the operator took over does not get chased either.
+  const threads = (await silentThreads(projectId)).filter(
+    (t) => !takenOver.has(t.supplierId),
+  );
   const result: FollowUpResult = { chased: [], closed: [], waiting: [] };
 
   for (const thread of threads) {

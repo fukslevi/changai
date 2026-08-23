@@ -9,30 +9,27 @@ async function main() {
   if (!project) process.exit(1);
 
   const c = await buildComparison(project.id);
-  console.log(`${project.name}: ${c.suppliers.length} suppliers · ${c.refusals} refused the target\n`);
-  if (c.walkAwayByQty) {
-    console.log("walk-away: " + [...c.walkAwayByQty].map(([q, v]) => `${q}=$${v.toFixed(2)}`).join("  "));
+  console.log(`${project.name}: ${c.suppliers.length} suppliers · ${c.refusals} refused the target`);
+  if (c.targetByQty) {
+    console.log("target: " + [...c.targetByQty].sort((a, b) => a[0] - b[0]).map(([q, v]) => `${q}=$${v.toFixed(2)}`).join("  "));
   }
-  console.log();
+  console.log(`acceptable gap: up to ${c.acceptableGapPct}%
+`);
 
+  console.log("gap%    price    target   qty    supplier");
   for (const s of c.suppliers) {
-    console.log("=".repeat(72));
-    console.log(`${s.company}${s.rejectsTargetPrice ? "   [דוחה]" : ""}`);
-    if (s.incoterm || s.moq || s.leadTimeDays) {
-      console.log(`  ${s.incoterm ?? "?"} · MOQ ${s.moq ?? "-"} · ${s.leadTimeDays ?? "-"} ימים · ${s.paymentTerms ?? "-"}`);
+    if (s.lines.length === 0) {
+      console.log(`  -      -        -        -      ${s.company}  [דוחה]`);
+      continue;
     }
-    if (s.cartonDimensionsCm) console.log(`  קרטון ${s.cartonDimensionsCm} · ${s.unitsPerCarton ?? "?"} יח'`);
-    for (const l of s.lines.slice(0, 6)) {
-      const verdict = l.passes === null ? "" : l.passes ? "  ✓" : "  ✗";
+    for (const l of s.lines.slice(0, 4)) {
+      const gap = l.gapPct === null ? "  -  " : `${l.gapPct >= 0 ? "+" : ""}${l.gapPct.toFixed(0)}%`;
+      const mark = l.acceptable === null ? " " : l.acceptable ? "✓" : "✗";
       console.log(
-        `    ${String(l.qty ?? "-").padStart(5)}  FOB $${(l.quotedFob ?? 0).toFixed(2).padStart(6)}` +
-        `  נחיתה $${l.landed === null ? "  ?  " : l.landed.toFixed(2).padStart(6)}` +
-        `  תקרה $${l.walkAway === null ? "  ?  " : l.walkAway.toFixed(2).padStart(6)}` +
-        `  מרווח ${l.headroom === null ? "?" : (l.headroom >= 0 ? "+" : "") + l.headroom.toFixed(2)}${verdict}  ${l.itemName.slice(0, 30)}`,
+        `${gap.padStart(6)} ${mark} $${(l.quotedFob ?? 0).toFixed(2).padStart(7)}` +
+        ` $${(l.target ?? 0).toFixed(2).padStart(7)}  ${String(l.qty ?? "-").padStart(5)}  ${s.company.slice(0, 34)}`,
       );
     }
-    if (s.priceObjection) console.log(`  "${s.priceObjection.slice(0, 120)}"`);
-    if (s.deviations.length) console.log(`  ${s.deviations.length} סטיות מהמפרט`);
   }
   process.exit(0);
 }

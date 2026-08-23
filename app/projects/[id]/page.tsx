@@ -455,7 +455,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
               c.tiers.map((t) => ({
                 itemName: c.itemName,
                 qty: t.qty,
-                walkAwayFob: t.walkAwayFob,
+                walkAwayFob: t.ceiling,
               })),
             )}
             blockedReason={mandate.blockedReason}

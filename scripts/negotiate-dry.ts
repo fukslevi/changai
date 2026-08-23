@@ -20,7 +20,7 @@ async function main() {
 
   console.log(`mandate: ${mandate.ceilings.length} products, ${mandate.nonNegotiable.length} non-negotiable requirements`);
   for (const c of mandate.ceilings) {
-    for (const t of c.tiers) console.log(`  ceiling ${c.itemName} @ ${t.qty}: $${t.walkAwayFob.toFixed(2)} (open at $${t.rfqTargetFob ?? "-"})`);
+    for (const t of c.tiers) console.log(`  ceiling ${c.itemName} @ ${t.qty}: $${t.ceiling.toFixed(2)} (open at $${t.target})`);
   }
 
   const rows = await conversations(project.id);

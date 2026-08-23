@@ -9,10 +9,9 @@ const mandate: Mandate = {
   sampleBudgetUsd: 0,
   maxToolingUsd: 0,
   maxRounds: 4,
-  ceilings: [{ itemName: "Rear Bike Basket", tiers: [
-    { qty: 1500, freightMode: "fcl", freightNote: "", freightPerUnit: 2.4,
-      walkAwayFob: 13.22, rfqTargetFob: 7.7, headroom: 5.52 },
-  ] }],
+  ceilings: [
+    { itemName: "Rear Bike Basket", tiers: [{ qty: 1500, target: 7.7, ceiling: 13.22 }] },
+  ],
   nonNegotiable: ["Amazon lab testing"],
   blockedReason: null,
 };

@@ -46,11 +46,23 @@ export async function GET(request: Request) {
   }
 
   // Replies wait for their working day; first contact only waits for ours.
+  /*
+   * A cycle that overruns is a cycle that reports failure having done real
+   * work. Stop cleanly instead: whatever is left is picked up next time,
+   * because every step reads its own state rather than a position in a loop.
+   */
+  const deadline = Date.now() + 240_000;
+
   const canReply = withinSupplierHours();
   const canContact = withinSendingHours();
   const summary: Record<string, unknown>[] = [];
 
   for (const project of await db.select().from(projects)) {
+    if (Date.now() > deadline) {
+      summary.push({ project: project.name, skipped: "cycle out of time" });
+      continue;
+    }
+
     try {
       const inbox = await pollInbox(project.id);
       const work = canReply

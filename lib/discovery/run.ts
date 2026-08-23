@@ -75,13 +75,20 @@ async function inBatches<T, R>(
  */
 export async function runDiscovery(
   projectId: string,
-  options: { target?: number } = {},
+  options: { target?: number; maxRounds?: number } = {},
 ): Promise<DiscoveryResult> {
   const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
   if (!project) throw new Error("Project not found");
   if (project.keywords.length === 0) throw new Error("Add keywords before running discovery");
 
   const target = options.target ?? TARGET_LEADS;
+  /*
+   * Rounds per call, not per project. Searching every angle in one go takes
+   * minutes, and putting that inside the scheduled cycle made the whole cycle
+   * time out - one expensive step starving every cheap one behind it. The
+   * cycle asks for one round and comes back in two hours.
+   */
+  const maxRounds = options.maxRounds ?? BROADENING_SUFFIXES.length + 1;
 
   /*
    * Keep searching until the shortlist is big enough, widening the angle each
@@ -96,7 +103,7 @@ export async function runDiscovery(
   const seenDomains = new Set(already.map((r) => r.domain));
   const hits: Awaited<ReturnType<typeof findCandidates>> = [];
 
-  for (let round = 0; round <= BROADENING_SUFFIXES.length; round++) {
+  for (let round = 0; round < maxRounds && round <= BROADENING_SUFFIXES.length; round++) {
     if (seenDomains.size + hits.length >= target) break;
 
     const keywords =

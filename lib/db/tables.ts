@@ -305,6 +305,15 @@ export const supplierLeads = pgTable(
       .references(() => projects.id, { onDelete: "cascade" }),
     /** Set once approved and promoted. */
     supplierId: uuid("supplier_id").references(() => suppliers.id),
+    /**
+     * Set when the operator writes to this supplier themselves.
+     *
+     * From that point the agent stops touching the conversation - no replies,
+     * no follow-ups. Someone taking over a thread by hand is making a judgement
+     * the system cannot see, and a machine talking over them is worse than one
+     * that says nothing.
+     */
+    takenOverAt: timestamp("taken_over_at", { withTimezone: true }),
     companyName: text("company_name").notNull(),
     /**
      * The dedupe key. Company names come from the model and drift between runs

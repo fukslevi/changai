@@ -2,7 +2,8 @@
 
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { db, messages } from "../db";
+import { and } from "drizzle-orm";
+import { db, messages, supplierLeads } from "../db";
 import { pollInbox } from "../inbox/run";
 import { draftReply, sendReply } from "../inbox/reply";
 
@@ -61,8 +62,22 @@ export async function replyToSupplier(
 
   try {
     await sendReply(projectId, supplierId, body);
+
+    /*
+     * Writing to a supplier by hand is taking the conversation over. From here
+     * the agent stays out of it: whatever judgement prompted the operator to
+     * step in is one the system cannot see, and a machine replying over the top
+     * of it is worse than one that says nothing.
+     */
+    await db
+      .update(supplierLeads)
+      .set({ takenOverAt: new Date() })
+      .where(
+        and(eq(supplierLeads.projectId, projectId), eq(supplierLeads.supplierId, supplierId)),
+      );
+
     revalidatePath(`/projects/${projectId}`);
-    return { ok: "התשובה נשלחה" };
+    return { ok: "התשובה נשלחה. מעכשיו השיחה הזאת אצלך - המערכת לא תענה בה." };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "השליחה נכשלה" };
   }

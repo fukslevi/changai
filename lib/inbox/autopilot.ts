@@ -13,9 +13,18 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { z } from "zod";
-import { db, items, messages, openQuestions, projects, requirements, suppliers } from "../db";
+import {
+  db,
+  items,
+  messages,
+  openQuestions,
+  projects,
+  requirements,
+  supplierLeads,
+  suppliers,
+} from "../db";
 import { checkDraft } from "../negotiate/guard";
 import { loadMandate, mandateBrief, type Mandate } from "../negotiate/mandate";
 import { attachmentBlocks } from "../quotes/context";
@@ -309,6 +318,18 @@ export async function runAutopilot(
     waitingOnAnswers: [],
   };
 
+  // Conversations the operator has taken over stay theirs.
+  const takenOver = new Set(
+    (
+      await db
+        .select({ supplierId: supplierLeads.supplierId })
+        .from(supplierLeads)
+        .where(
+          and(eq(supplierLeads.projectId, projectId), isNotNull(supplierLeads.takenOverAt)),
+        )
+    ).map((r) => r.supplierId),
+  );
+
   const pending = await db
     .select({
       id: messages.id,
@@ -353,6 +374,7 @@ export async function runAutopilot(
 
   for (const message of latestPerSupplier.values()) {
     if (!message.supplierId) continue;
+    if (takenOver.has(message.supplierId)) continue;
     const company = message.company ?? "ספק";
 
     if (message.classification === "not_relevant") {

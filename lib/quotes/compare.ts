@@ -14,26 +14,20 @@
  */
 import { desc, eq } from "drizzle-orm";
 import { db, quoteReadings, suppliers } from "../db";
-import { estimateSeaFreight } from "../pricing/freight";
-import { landedCost, num, type CommercialAssumptions } from "../pricing/landed";
-import { projectPricing } from "../pricing/project";
+import { db as database, items } from "../db";
+import { num } from "../pricing/landed";
+import { ACCEPTABLE_GAP_PCT, compareToTarget } from "../pricing/target";
 
 export interface ComparisonLine {
   qty: number | null;
   itemName: string;
   quotedFob: number | null;
-  /** Their price carried through freight and duty to the warehouse. */
-  landed: number | null;
-  /** What we may pay at this quantity, from the model. */
-  walkAway: number | null;
-  /**
-   * The landed ceiling, so the two landed figures sit in the same unit. Showing
-   * landed cost beside an FOB ceiling made a passing line look like a breach.
-   */
-  maxLanded: number | null;
-  /** Positive means room to spare. */
-  headroom: number | null;
-  passes: boolean | null;
+  /** Ours, from the RFQ. */
+  target: number | null;
+  /** How far above target, as a percentage of it. 50 = half again as much. */
+  gapPct: number | null;
+  /** Within the acceptable band. */
+  acceptable: boolean | null;
   specNote: string | null;
 }
 
@@ -52,43 +46,23 @@ export interface SupplierComparison {
   priceObjection: string | null;
   summaryHe: string | null;
   lines: ComparisonLine[];
-  /** Best headroom across the lines, for ranking. Null when they never priced. */
-  bestHeadroom: number | null;
+  /** Smallest gap across the lines, for ranking. Null when they never priced. */
+  bestGapPct: number | null;
   readAt: Date;
 }
 
 export interface Comparison {
   suppliers: SupplierComparison[];
-  /** Null until the commercial model is complete. */
-  walkAwayByQty: Map<number, number> | null;
+  /** The RFQ's own target per quantity. */
+  targetByQty: Map<number, number> | null;
+  acceptableGapPct: number;
   /** How many said the target cannot be met, whatever price they named. */
   refusals: number;
 }
 
-/**
- * Carton packing beats unit price on bulky goods, so use the supplier's own
- * packing when they gave it and fall back to the project estimate when not.
- */
-function cbmPerUnitFrom(
-  cartonDimensionsCm: string | null,
-  unitsPerCarton: number | null,
-  fallback: number,
-): number {
-  if (!cartonDimensionsCm || !unitsPerCarton || unitsPerCarton <= 0) return fallback;
-
-  const numbers = cartonDimensionsCm.match(/\d+(?:\.\d+)?/g);
-  if (!numbers || numbers.length < 3) return fallback;
-
-  const [l, w, h] = numbers.slice(0, 3).map(Number);
-  if (!l || !w || !h) return fallback;
-
-  // Centimetres to cubic metres, then per unit.
-  return (l * w * h) / 1_000_000 / unitsPerCarton;
-}
-
 export async function buildComparison(projectId: string): Promise<Comparison> {
-  const [pricing, readings] = await Promise.all([
-    projectPricing(projectId),
+  const [priced, readings] = await Promise.all([
+    database.select().from(items).where(eq(items.projectId, projectId)),
     db
       .select({
         supplierId: quoteReadings.supplierId,
@@ -114,14 +88,21 @@ export async function buildComparison(projectId: string): Promise<Comparison> {
       .orderBy(desc(quoteReadings.createdAt)),
   ]);
 
-  // The main priced product carries the walk-away used for comparison.
-  const product = pricing.products.find((p) => p.tiers.length > 0) ?? null;
-  const walkAwayByQty = product
-    ? new Map(product.tiers.map((t) => [t.qty, t.walkAwayFob]))
-    : null;
+  /*
+   * The target price per quantity, straight from the RFQ. It is the only
+   * benchmark: it already carries the buyer's own analysis, so deriving a
+   * second one from retail price and freight added arithmetic without adding
+   * information.
+   */
+  const targets = priced
+    .filter((item) => item.kind === "priced_variant")
+    .flatMap((item) => item.targetPrices)
+    .filter((p) => p.qty !== null && p.unit_price !== null);
 
-  const commercial = pricing.commercial as CommercialAssumptions;
-  const fallbackCbm = product?.product.cbmPerUnit ?? 0;
+  const targetByQty =
+    targets.length > 0
+      ? new Map(targets.map((p) => [p.qty as number, p.unit_price as number]))
+      : null;
 
   /*
    * One row per supplier - their most recent reading. A supplier who wrote four
@@ -130,49 +111,45 @@ export async function buildComparison(projectId: string): Promise<Comparison> {
    */
   const latest = new Map<string, (typeof readings)[number]>();
   for (const reading of readings) {
-    if (!latest.has(reading.supplierId)) latest.set(reading.supplierId, reading);
+    const held = latest.get(reading.supplierId);
+    if (!held) {
+      latest.set(reading.supplierId, reading);
+      continue;
+    }
+    /*
+     * Prefer the most recent reading that actually has prices. Peitai quoted in
+     * full and then wrote again about something else; taking the newest row
+     * blindly turned a supplier with nine priced lines into a blank refusal.
+     */
+    if (held.lines.length === 0 && reading.lines.length > 0) {
+      latest.set(reading.supplierId, reading);
+    }
   }
 
   const out: SupplierComparison[] = [];
 
   for (const reading of latest.values()) {
-    const cbmPerUnit = cbmPerUnitFrom(
-      reading.cartonDimensionsCm,
-      reading.unitsPerCarton,
-      fallbackCbm,
-    );
-
     const lines: ComparisonLine[] = reading.lines.map((line) => {
-      const walkAway =
-        line.qty !== null && walkAwayByQty ? (walkAwayByQty.get(line.qty) ?? null) : null;
+      const target =
+        line.qty !== null && targetByQty ? (targetByQty.get(line.qty) ?? null) : null;
 
-      let landed: number | null = null;
-      if (line.unit_price !== null && cbmPerUnit > 0 && line.qty !== null) {
-        const freight = estimateSeaFreight(cbmPerUnit * line.qty);
-        landed = landedCost(
-          line.unit_price,
-          { ...commercial, freightUsdPerCbm: freight.usdPerCbm },
-          cbmPerUnit,
-        ).landed;
-      }
-
-      const headroom =
-        walkAway !== null && line.unit_price !== null ? walkAway - line.unit_price : null;
+      const verdict =
+        target !== null && line.unit_price !== null
+          ? compareToTarget(line.unit_price, target)
+          : null;
 
       return {
         qty: line.qty,
         itemName: line.item_name,
         quotedFob: line.unit_price,
-        landed,
-        maxLanded: product?.verdict?.maxLanded ?? null,
-        walkAway,
-        headroom,
-        passes: headroom === null ? null : headroom >= 0,
+        target,
+        gapPct: verdict?.gapPct ?? null,
+        acceptable: verdict?.acceptable ?? null,
         specNote: line.spec_note,
       };
     });
 
-    const headrooms = lines.map((l) => l.headroom).filter((h): h is number => h !== null);
+    const gaps = lines.map((l) => l.gapPct).filter((g): g is number => g !== null);
 
     out.push({
       supplierId: reading.supplierId,
@@ -191,23 +168,24 @@ export async function buildComparison(projectId: string): Promise<Comparison> {
       priceObjection: reading.priceObjection,
       summaryHe: reading.summaryHe,
       lines,
-      bestHeadroom: headrooms.length > 0 ? Math.max(...headrooms) : null,
+      bestGapPct: gaps.length > 0 ? Math.min(...gaps) : null,
       readAt: reading.createdAt,
     });
   }
 
-  // Priced suppliers first, best headroom at the top; refusals after them, since
-  // they carry information rather than an offer.
+  // Closest to target first; refusals after, since they carry information
+  // rather than an offer.
   out.sort((a, b) => {
-    if (a.bestHeadroom === null && b.bestHeadroom === null) return 0;
-    if (a.bestHeadroom === null) return 1;
-    if (b.bestHeadroom === null) return -1;
-    return b.bestHeadroom - a.bestHeadroom;
+    if (a.bestGapPct === null && b.bestGapPct === null) return 0;
+    if (a.bestGapPct === null) return 1;
+    if (b.bestGapPct === null) return -1;
+    return a.bestGapPct - b.bestGapPct;
   });
 
   return {
     suppliers: out,
-    walkAwayByQty,
+    targetByQty,
+    acceptableGapPct: ACCEPTABLE_GAP_PCT,
     refusals: out.filter((s) => s.rejectsTargetPrice).length,
   };
 }

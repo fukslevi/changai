@@ -50,7 +50,9 @@ export async function runCampaign(projectId: string): Promise<CampaignRun> {
   ).length;
 
   if (leadCount < TARGET_LEADS && (project.discoveryRuns ?? 0) < MAX_DISCOVERY_RUNS) {
-    await runDiscovery(projectId);
+    // One broadening round per cycle. The cycle has a time budget and discovery
+    // is the most expensive thing in it.
+    await runDiscovery(projectId, { maxRounds: 1 });
     const data = new FormData();
     data.set("projectId", projectId);
     data.set("threshold", "30");

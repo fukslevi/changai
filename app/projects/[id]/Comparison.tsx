@@ -28,13 +28,14 @@ export function Comparison({ data }: { data: Comparison }) {
     <div className="stack" dir="rtl">
       <p className="muted" style={{ margin: 0 }}>
         {priced.length} עם מחירים · {data.refusals} דחו את מחיר המטרה
-        {data.walkAwayByQty && (
+        {data.targetByQty && (
           <>
-            {" · תקרה: "}
-            {[...data.walkAwayByQty]
+            {" · מחיר מטרה: "}
+            {[...data.targetByQty]
               .sort((a, b) => a[0] - b[0])
               .map(([qty, value]) => `${qty.toLocaleString()}=${money(value)}`)
               .join("  ")}
+            {` · יעד: עד ${data.acceptableGapPct}% מעל`}
           </>
         )}
       </p>
@@ -63,10 +64,9 @@ export function Comparison({ data }: { data: Comparison }) {
                 <tr className="muted" style={{ textAlign: "right", fontSize: 12 }}>
                   <th style={{ padding: "4px 6px" }}>פריט</th>
                   <th style={{ padding: "4px 6px" }}>כמות</th>
-                  <th style={{ padding: "4px 6px" }}>FOB</th>
-                  <th style={{ padding: "4px 6px" }}>עלות נחיתה</th>
-                  <th style={{ padding: "4px 6px" }}>תקרת נחיתה</th>
-                  <th style={{ padding: "4px 6px" }}>מרווח על FOB</th>
+                  <th style={{ padding: "4px 6px" }}>מחיר הספק</th>
+                  <th style={{ padding: "4px 6px" }}>מחיר מטרה</th>
+                  <th style={{ padding: "4px 6px" }}>פער</th>
                 </tr>
               </thead>
               <tbody>
@@ -82,27 +82,25 @@ export function Comparison({ data }: { data: Comparison }) {
                     <td style={{ padding: "4px 6px" }} dir="ltr">
                       {money(line.quotedFob)}
                     </td>
-                    <td style={{ padding: "4px 6px" }} dir="ltr">
-                      {money(line.landed)}
-                    </td>
                     <td className="muted" style={{ padding: "4px 6px" }} dir="ltr">
-                      {money(line.maxLanded)}
+                      {money(line.target)}
                     </td>
                     <td
                       style={{
                         padding: "4px 6px",
+                        fontWeight: 600,
                         color:
-                          line.passes === null
+                          line.acceptable === null
                             ? "var(--muted)"
-                            : line.passes
+                            : line.acceptable
                               ? "var(--ok)"
                               : "var(--bad)",
                       }}
                       dir="ltr"
                     >
-                      {line.headroom === null
+                      {line.gapPct === null
                         ? "-"
-                        : `${line.headroom >= 0 ? "+" : ""}${line.headroom.toFixed(2)}`}
+                        : `${line.gapPct >= 0 ? "+" : ""}${line.gapPct.toFixed(0)}%`}
                     </td>
                   </tr>
                 ))}

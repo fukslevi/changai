@@ -40,66 +40,17 @@ export interface AnsweredQuestion {
   answer: string;
 }
 
-const COMMERCIAL_PROMPTS: Record<
-  NonNullable<PendingQuestion["field"]>,
-  { question: (name: string) => string; why: string; unit: string }
-> = {
-  targetRetailUsd: {
-    question: (name) => `באיזה מחיר תמכרו את ${name} באמזון?`,
-    why: "בלי מחיר המדף אין דרך לדעת מה מותר לשלם ליצרן. מחיר המטרה ב-RFQ הוא ניחוש עד שיש את המספר הזה - ובפעם הקודמת הוא היה נמוך ב-5.52$ מהתקרה האמיתית.",
-    unit: "$",
-  },
-  fbaFeeUsd: {
-    question: (name) => `מה עמלת ה-FBA ליחידה של ${name}?`,
-    why: "לפי גודל ומשקל האריזה. יורדת מההכנסה לפני חישוב הרווח, ולכן משפיעה ישירות על מחיר ה-walk-away.",
-    unit: "$",
-  },
-  assumedCbmPerUnit: {
-    question: (name) => `מה הנפח המשוער של ${name} באריזה, בקוב ליחידה?`,
-    why: "קובע את עלות השילוח, שבמוצר מגושם גדולה ממחיר המוצר עצמו. הערכה גסה מספיקה - מידות הקרטון האמיתיות יגיעו מהצעת המחיר ויחליפו אותה.",
-    unit: "CBM",
-  },
-};
-
-/** Commercial inputs the model is still missing, phrased as questions. */
-async function commercialQuestions(projectId: string): Promise<PendingQuestion[]> {
-  const pricing = await projectPricing(projectId);
-  const rows = await db.select().from(items).where(eq(items.projectId, projectId));
-  const byId = new Map(rows.map((r) => [r.id, r]));
-
-  const out: PendingQuestion[] = [];
-
-  for (const product of pricing.products) {
-    const item = byId.get(product.itemId);
-    if (!item) continue;
-
-    const fields: NonNullable<PendingQuestion["field"]>[] = [
-      "targetRetailUsd",
-      "fbaFeeUsd",
-      "assumedCbmPerUnit",
-    ];
-
-    for (const field of fields) {
-      // Zero counts as unanswered, not as an answer. A retail price of 0 is a
-      // field that was written to by accident, and treating it as filled in is
-      // how the send gate and this queue ended up disagreeing.
-      if (num(item[field])) continue;
-      const prompt = COMMERCIAL_PROMPTS[field];
-      out.push({
-        id: `commercial:${product.itemId}:${field}`,
-        kind: "commercial",
-        company: null,
-        scope: "project",
-        questionHe: prompt.question(product.name),
-        whyHe: prompt.why,
-        field,
-        itemId: product.itemId,
-        unit: prompt.unit,
-      });
-    }
-  }
-
-  return out;
+/**
+ * There are no commercial questions any more.
+ *
+ * The queue used to ask for retail price, fulfilment fee and packed volume so a
+ * ceiling could be derived. The target price in the RFQ already carries that
+ * analysis, so the questions were asking the operator to redo work they had
+ * done before the document was written. What remains is what a supplier asked
+ * and nobody has decided.
+ */
+async function commercialQuestions(_projectId: string): Promise<PendingQuestion[]> {
+  return [];
 }
 
 /**
