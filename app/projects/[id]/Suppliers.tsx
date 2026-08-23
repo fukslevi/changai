@@ -147,7 +147,11 @@ export function Suppliers({ projectId, leads }: { projectId: string; leads: Lead
 
       <Feedback state={decideState} />
 
-      <ul className="list">
+      <details>
+        <summary className="muted" style={{ cursor: "pointer", fontSize: 13 }}>
+          הצג את הרשימה ({leads.length})
+        </summary>
+        <ul className="list" style={{ marginTop: 8 }}>
         {[...pending, ...approved, ...rejected].map((lead) => (
           <li
             key={lead.id}
@@ -182,17 +186,20 @@ export function Suppliers({ projectId, leads }: { projectId: string; leads: Lead
                 </div>
               </div>
               <strong
-                style={{ color: scoreColour(lead.matchScore), fontSize: 20, minWidth: 40, textAlign: "right" }}
+                title={lead.matchRationale ?? undefined}
+                style={{
+                  color: scoreColour(lead.matchScore),
+                  fontSize: 20,
+                  minWidth: 40,
+                  textAlign: "right",
+                  cursor: lead.matchRationale ? "help" : undefined,
+                }}
               >
                 {lead.matchScore ?? "?"}
               </strong>
             </div>
 
-            {lead.matchRationale && (
-              <p className="muted" style={{ marginTop: 6, fontSize: 12.5 }}>
-                {lead.matchRationale}
-              </p>
-            )}
+
 
             {lead.status === "pending" && !lead.email && (
               <MissingEmail leadId={lead.id} projectId={projectId} />
@@ -216,7 +223,8 @@ export function Suppliers({ projectId, leads }: { projectId: string; leads: Lead
             )}
           </li>
         ))}
-      </ul>
+        </ul>
+      </details>
     </div>
   );
 }

@@ -8,7 +8,9 @@
  * derived from what has already been recorded.
  */
 import { eq } from "drizzle-orm";
-import { db, projects } from "../db";
+import { db, projects, supplierLeads } from "../db";
+import { MAX_DISCOVERY_RUNS, runDiscovery, TARGET_LEADS } from "../discovery/run";
+import { approveAllAbove } from "../actions/discovery";
 import { campaignStatus, prepareCampaign, sendNext } from "./batch";
 
 /**
@@ -35,6 +37,24 @@ export async function runCampaign(projectId: string): Promise<CampaignRun> {
 
   if (project.autonomyTier < 3) {
     return { sent: [], failed: [], remaining: 0, skipped: "not autonomous" };
+  }
+
+  /*
+   * Top the shortlist up before sending. A first pass that returned nine leads
+   * is not a finished search - it is one angle - and the code that broadens it
+   * existed but nothing ever called it again, so the target was never reached
+   * on any project that already had leads.
+   */
+  const leadCount = (
+    await db.select({ id: supplierLeads.id }).from(supplierLeads).where(eq(supplierLeads.projectId, projectId))
+  ).length;
+
+  if (leadCount < TARGET_LEADS && (project.discoveryRuns ?? 0) < MAX_DISCOVERY_RUNS) {
+    await runDiscovery(projectId);
+    const data = new FormData();
+    data.set("projectId", projectId);
+    data.set("threshold", "30");
+    await approveAllAbove({}, data);
   }
 
   const status = await campaignStatus(projectId);

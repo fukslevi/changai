@@ -32,6 +32,15 @@ export interface ThreadMessage {
   receivedAt: Date;
 }
 
+/**
+ * Whether a person is genuinely required.
+ *
+ * The triage that produced `needs_human` ran before the project's autonomy was
+ * consulted, so its reason text describes a world where nobody was authorised
+ * to read an attachment. Under a mandate that covers price, it is stale - and a
+ * badge saying "needs you" on a thread the system is about to answer is worse
+ * than no badge at all.
+ */
 export interface SupplierThread {
   supplierId: string;
   company: string;
@@ -91,7 +100,15 @@ function timeOf(value: Date): string {
 }
 
 /** One supplier: the whole exchange, the triage, and the reply box. */
-function Thread({ projectId, thread }: { projectId: string; thread: SupplierThread }) {
+function Thread({
+  projectId,
+  thread,
+  autonomous,
+}: {
+  projectId: string;
+  thread: SupplierThread;
+  autonomous: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [body, setBody] = useState("");
   const [draftState, draft] = useActionState<InboxState, FormData>(suggestReply, {});
@@ -128,9 +145,14 @@ function Thread({ projectId, thread }: { projectId: string; thread: SupplierThre
           <span className="tag" style={{ color: STATUS_COLOUR[status] }}>
             {STATUS_LABEL[status] ?? status}
           </span>
-          {analysis?.needs_human && stillOpen && (
+          {analysis?.needs_human && stillOpen && !autonomous && (
             <span className="tag" style={{ color: "var(--bad)" }}>
               דורש אותך
+            </span>
+          )}
+          {analysis?.needs_human && stillOpen && autonomous && (
+            <span className="tag" style={{ color: "var(--ok)" }}>
+              ייענה אוטומטית
             </span>
           )}
           <div className="muted" style={{ marginTop: 2 }} dir="ltr">
@@ -162,7 +184,7 @@ function Thread({ projectId, thread }: { projectId: string; thread: SupplierThre
             </div>
           )}
 
-          {analysis.needs_human_reason && stillOpen && (
+          {analysis.needs_human_reason && stillOpen && !autonomous && (
             <div style={{ fontSize: 12.5, color: "var(--bad)" }}>{analysis.needs_human_reason}</div>
           )}
         </div>
@@ -256,9 +278,11 @@ function Thread({ projectId, thread }: { projectId: string; thread: SupplierThre
 export function Conversations({
   projectId,
   threads,
+  autonomous,
 }: {
   projectId: string;
   threads: SupplierThread[];
+  autonomous: boolean;
 }) {
   const [refreshState, refresh] = useActionState<InboxState, FormData>(refreshInbox, {});
 
@@ -285,7 +309,12 @@ export function Conversations({
       ) : (
         <ul className="list">
           {replied.map((t) => (
-            <Thread key={t.supplierId} projectId={projectId} thread={t} />
+            <Thread
+              key={t.supplierId}
+              projectId={projectId}
+              thread={t}
+              autonomous={autonomous}
+            />
           ))}
         </ul>
       )}

@@ -32,6 +32,14 @@ const MIN_SCORE_TO_STORE = 20;
 export const TARGET_LEADS = 30;
 
 /**
+ * Passes before the shortlist is accepted as final.
+ *
+ * A product with few manufacturers should not be searched again on every cycle
+ * forever, finding the same companies each time and paying for it.
+ */
+export const MAX_DISCOVERY_RUNS = 4;
+
+/**
  * Extra angles to search when the first pass falls short.
  *
  * A factory describes itself by material, process and market, and the operator's
@@ -138,6 +146,11 @@ export async function runDiscovery(
     .from(supplierLeads)
     .where(eq(supplierLeads.projectId, projectId));
   const decided = new Set(existing.filter((e) => e.status !== "pending").map((e) => e.domain));
+
+  await db
+    .update(projects)
+    .set({ discoveryRuns: (project.discoveryRuns ?? 0) + 1 })
+    .where(eq(projects.id, projectId));
 
   let saved = 0;
   for (const { hit, contact } of enriched) {

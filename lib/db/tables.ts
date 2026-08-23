@@ -118,6 +118,14 @@ export const projects = pgTable("projects", {
    * conversation mid-sentence.
    */
   maxNegotiationRounds: integer("max_negotiation_rounds").notNull().default(10),
+  /**
+   * How many discovery passes have run.
+   *
+   * Topping up the shortlist has to be bounded by something other than the
+   * lead count: a product with few manufacturers would otherwise be searched
+   * again on every cycle, forever, finding the same companies each time.
+   */
+  discoveryRuns: integer("discovery_runs").notNull().default(0),
 
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

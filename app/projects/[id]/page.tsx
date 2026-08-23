@@ -242,6 +242,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           questions={open}
           answered={answered}
           awaitingReply={awaitingReply}
+          autonomous={mandate.mayNegotiatePrice}
           heldForHuman={heldForHuman.map((t) => ({
             company: t.company,
             reason:
@@ -256,7 +257,11 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           <span className="muted" style={{ fontSize: 14 }}>({repliedCount} ענו)</span>
         </h2>
         <Guide k="replies" />
-        <Conversations projectId={project.id} threads={threads} />
+        <Conversations
+          projectId={project.id}
+          threads={threads}
+          autonomous={mandate.mayNegotiatePrice}
+        />
       </section>
 
       <section id="step-quotes" className="card stack">

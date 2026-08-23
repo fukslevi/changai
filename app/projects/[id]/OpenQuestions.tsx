@@ -140,6 +140,7 @@ export function OpenQuestions({
   questions,
   answered,
   awaitingReply,
+  autonomous,
   heldForHuman,
 }: {
   projectId: string;
@@ -147,6 +148,8 @@ export function OpenQuestions({
   answered: AnsweredRow[];
   /** Conversations the autopilot can answer on its own. */
   awaitingReply: number;
+  /** When true the cycle answers them; offering a button is noise. */
+  autonomous: boolean;
   /** Conversations only a person can move forward. */
   heldForHuman: { company: string; reason: string }[];
 }) {
@@ -184,7 +187,13 @@ export function OpenQuestions({
         </ul>
       )}
 
-      {awaitingReply > 0 && (
+      {awaitingReply > 0 && autonomous && (
+        <p className="muted" style={{ margin: 0 }}>
+          {awaitingReply} שיחות ממתינות לתשובה - ייענו במחזור הבא, אין מה לעשות איתן.
+        </p>
+      )}
+
+      {awaitingReply > 0 && !autonomous && (
         <form action={run} className="row">
           <input type="hidden" name="projectId" value={projectId} />
           <Submit label={`ענה ל-${awaitingReply} ספקים`} pendingLabel="שולח…" />
