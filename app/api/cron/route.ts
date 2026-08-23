@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db, projects } from "@/lib/db";
 import { runAutopilot, triageAndPark, withinSendingHours, withinSupplierHours } from "@/lib/inbox/autopilot";
 import { runFollowUps } from "@/lib/inbox/followup";
+import { dispatchNotifications } from "@/lib/notify/dispatch";
 import { runCampaign } from "@/lib/outreach/campaign";
 import { markCycleRun } from "@/lib/settings";
 import { pollInbox } from "@/lib/inbox/run";
@@ -58,6 +59,13 @@ export async function GET(request: Request) {
   const summary: Record<string, unknown>[] = [];
 
   for (const project of await db.select().from(projects)) {
+    // A project that is switched off is switched off: nothing read, nothing
+    // sent, nothing chased. Anything less makes the switch a decoration.
+    if (project.pausedAt) {
+      summary.push({ project: project.name, skipped: "paused" });
+      continue;
+    }
+
     if (Date.now() > deadline) {
       summary.push({ project: project.name, skipped: "cycle out of time" });
       continue;
@@ -96,9 +104,26 @@ export async function GET(request: Request) {
     }
   }
 
+  /*
+   * Announcements go last, after the cycle has changed whatever it was going
+   * to change. Notifying first would describe the state on the way in, which
+   * is the one state the operator does not need - it is about to be wrong.
+   */
+  let notified: unknown[] = [];
+  try {
+    notified = await dispatchNotifications();
+  } catch (err) {
+    notified = [{ error: err instanceof Error ? err.message : String(err) }];
+  }
+
   // Stamped whatever happened: the useful fact is that the loop ran, not that
   // it found work.
   await markCycleRun();
 
-  return NextResponse.json({ replyWindow: canReply, contactWindow: canContact, projects: summary });
+  return NextResponse.json({
+    replyWindow: canReply,
+    contactWindow: canContact,
+    projects: summary,
+    notified,
+  });
 }

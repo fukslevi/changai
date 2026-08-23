@@ -44,6 +44,9 @@ const LABEL: Record<Step, string> = {
 async function nextStep(projectId: string): Promise<Step | null> {
   const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
   if (!project) return null;
+  // A project that is switched off does not quietly set itself up when someone
+  // opens the page to look at it.
+  if (project.pausedAt) return null;
 
   const parsed = await db
     .select({ id: items.id })

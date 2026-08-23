@@ -15,6 +15,7 @@ import { Autostart } from "./Autostart";
 import { Comparison } from "./Comparison";
 import { buildComparison } from "@/lib/quotes/compare";
 import { Autonomy } from "./Autonomy";
+import { Pause } from "./Pause";
 import { campaignStatus } from "@/lib/outreach/batch";
 import { projectPricing } from "@/lib/pricing/project";
 import { conversations } from "@/lib/inbox/run";
@@ -92,6 +93,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         email: row.supplierEmail,
         website: row.website,
         matchScore: leads.find((l) => l.supplierId === row.supplierId)?.matchScore ?? null,
+        takenOver: Boolean(leads.find((l) => l.supplierId === row.supplierId)?.takenOverAt),
         messages: [],
       };
       bySupplier.set(row.supplierId, thread);
@@ -117,7 +119,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
    * something the button would then refuse to do.
    */
   const ballWithUs = threads.filter(
-    (t) => t.messages[t.messages.length - 1]?.direction === "inbound",
+    (t) => t.messages[t.messages.length - 1]?.direction === "inbound" && !t.takenOver,
   );
   /*
    * The same rule the autopilot uses, mandate included. The page had its own
@@ -140,14 +142,21 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     t.messages.some((m) => m.direction === "inbound"),
   ).length;
 
+  /*
+   * Taking over one conversation does not take over the project.
+   *
+   * The flag lives on the supplier row, scoped to this project and this
+   * factory, so the other ten threads carry on under the same mandate as
+   * before. That is the intent, and it is worth saying on the page - a system
+   * that silently stopped everything because you answered one email once would
+   * look identical from here.
+   */
+  const takenOverCount = threads.filter((t) => t.takenOver).length;
+
   const navSections: NavSection[] = [
+    { id: "step-quotes", label: "הצעות מחיר", count: comparison.suppliers.length },
     { id: "step-inbox", label: "מה מחכה לך", count: open.length, urgent: open.length > 0 },
     { id: "step-talks", label: "שיחות עם ספקים", count: repliedCount },
-    {
-      id: "step-quotes",
-      label: "הצעות מחיר",
-      count: comparison.suppliers.length,
-    },
     { id: "step-suppliers", label: "ספקים", count: leads.length },
     { id: "step-product", label: "המוצר", dimmed: !parsed },
     { id: "step-settings", label: "הגדרות" },
@@ -167,11 +176,22 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         </div>
         <div className="stack" style={{ gap: 4, alignItems: "flex-end" }}>
           <div className="row" style={{ gap: 6 }}>
+          {project.pausedAt && (
+            <span className="tag" style={{ color: "var(--bad)" }}>
+              <span className="status-dot" style={{ background: "var(--bad)" }} />
+              כבוי
+            </span>
+          )}
           {status && (
             <>
               <span
                 className="tag"
                 style={{ color: status.autonomous ? "var(--ok)" : "var(--muted)" }}
+                title={
+                  status.autonomous
+                    ? "הסוכן מנהל את המשא ומתן לבד, כולל מחיר, עד התקרה"
+                    : "כל החלטה מסחרית עוברת דרכך"
+                }
               >
                 {status.autonomous ? "אוטונומי" : "מלווה"}
               </span>
@@ -191,11 +211,24 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             </>
           )}
           </div>
-          {status?.nextAction && (
+          {project.pausedAt ? (
             <span className="muted" style={{ fontSize: 12.5 }} dir="rtl">
-              {status.nextAction}
+              כבוי - לא נשלחות פניות, לא נקראות תשובות ולא נשלחות תזכורות
+            </span>
+          ) : (
+            status?.nextAction && (
+              <span className="muted" style={{ fontSize: 12.5 }} dir="rtl">
+                {status.nextAction}
+              </span>
+            )
+          )}
+          {takenOverCount > 0 && (
+            <span className="muted" style={{ fontSize: 12.5 }} dir="rtl">
+              {takenOverCount} שיחות שלקחת לעצמך - הפרויקט עצמו נשאר{" "}
+              {status?.autonomous ? "אוטונומי" : "מלווה"} לכל השאר
             </span>
           )}
+          <Pause projectId={project.id} pausedAt={project.pausedAt} />
         </div>
       </div>
 
@@ -231,9 +264,29 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       */}
       <Autostart projectId={project.id} pending={setupPending} />
 
+      {/*
+        The table first.
+        
+        It used to be third, behind the queue and the conversation log, which is
+        the order the work happens in rather than the order it is read in. The
+        question anyone opens a sourcing project with is "how close are we", and
+        that is one table - everything below it explains how the numbers got
+        there, which is only interesting once you have seen them.
+      */}
+      <section id="step-quotes" className="card stack">
+        <h2>
+          1 · הצעות מחיר{" "}
+          <span className="muted" style={{ fontSize: 14 }}>
+            ({comparison.suppliers.length})
+          </span>
+        </h2>
+        <Guide k="comparison" />
+        <Comparison data={comparison} />
+      </section>
+
       <section id="step-inbox" className="card stack">
         <h2>
-          1 · מה מחכה לך{" "}
+          2 · מה מחכה לך{" "}
           {open.length > 0 && <span className="bad" style={{ fontSize: 14 }}>({open.length})</span>}
         </h2>
         <Guide k="openQuestions" />
@@ -253,7 +306,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
 
       <section id="step-talks" className="card stack">
         <h2>
-          2 · שיחות עם ספקים{" "}
+          3 · שיחות עם ספקים{" "}
           <span className="muted" style={{ fontSize: 14 }}>({repliedCount} ענו)</span>
         </h2>
         <Guide k="replies" />
@@ -262,17 +315,6 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           threads={threads}
           autonomous={mandate.mayNegotiatePrice}
         />
-      </section>
-
-      <section id="step-quotes" className="card stack">
-        <h2>
-          3 · הצעות מחיר{" "}
-          <span className="muted" style={{ fontSize: 14 }}>
-            ({comparison.suppliers.length})
-          </span>
-        </h2>
-        <Guide k="comparison" />
-        <Comparison data={comparison} />
       </section>
 
       <section id="step-suppliers" className="card stack">

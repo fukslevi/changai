@@ -6,6 +6,12 @@ export interface AppSettings {
   senderTitle: string;
   sourcingMailbox: string;
   companyName: string;
+  /**
+   * Where alerts go. Deliberately not the sourcing mailbox: that one fills with
+   * supplier mail all day, which is exactly where a message meant for you gets
+   * lost.
+   */
+  notifyEmail: string;
 }
 
 /**
@@ -81,6 +87,7 @@ export async function getSettings(): Promise<AppSettings> {
     senderTitle: row?.senderTitle || process.env.SOURCING_SENDER_TITLE || "",
     sourcingMailbox: row?.sourcingMailbox || process.env.SOURCING_MAILBOX || "",
     companyName: row?.companyName || "SoSimple",
+    notifyEmail: row?.notifyEmail || "ori@sosimple.co.il",
   };
 }
 

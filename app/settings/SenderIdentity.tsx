@@ -75,6 +75,23 @@ export function SenderIdentity({ current }: { current: AppSettings }) {
         </p>
       </div>
 
+      <div>
+        <label htmlFor="notifyEmail">מייל להתראות</label>
+        <input
+          id="notifyEmail"
+          name="notifyEmail"
+          type="email"
+          dir="ltr"
+          defaultValue={current.notifyEmail}
+          required
+        />
+        <p className="hint">
+          לכאן נשלחות התראות בעברית: שאלה פתוחה שרק אתה יכול לענות עליה, ופרויקט שהסתיים. כל
+          התראה נשלחת פעם אחת בלבד - שאלה שכבר דווחה לא חוזרת בכל מחזור. עדיף שזו לא תהיה תיבת
+          השליחה: שם היא נבלעת בין המיילים של הספקים.
+        </p>
+      </div>
+
       {state.error && <p className="error">{state.error}</p>}
       {state.ok && <p style={{ color: "var(--ok)", fontSize: 13 }}>{state.ok}</p>}
 

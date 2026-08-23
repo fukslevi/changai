@@ -126,6 +126,15 @@ export const projects = pgTable("projects", {
    * again on every cycle, forever, finding the same companies each time.
    */
   discoveryRuns: integer("discovery_runs").notNull().default(0),
+  /**
+   * Set to stop the project entirely.
+   *
+   * Nothing is sent, read or chased while it is set - the whole project stands
+   * still rather than the setting merely being cosmetic. Different from turning
+   * autonomy off, which keeps the project running and only moves the decisions
+   * back to a person.
+   */
+  pausedAt: timestamp("paused_at", { withTimezone: true }),
 
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -167,6 +176,8 @@ export const settings = pgTable("settings", {
    * one that stopped days ago - both look like a page that is not changing.
    */
   lastCycleAt: timestamp("last_cycle_at", { withTimezone: true }),
+  /** Where notifications go. Separate from the sourcing mailbox on purpose. */
+  notifyEmail: text("notify_email"),
 
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -531,6 +542,29 @@ export const quoteReadings = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("quote_readings_project_idx").on(t.projectId, t.supplierId)],
+);
+
+/**
+ * What has already been announced.
+ *
+ * The cycle runs every two hours and most of what it finds is the same thing it
+ * found last time. Without a record, "you have an open question" arrives twelve
+ * times a day until it is answered, and the twelfth is read exactly as
+ * carefully as the first - which is to say, not at all.
+ */
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<"open_questions" | "project_done">().notNull(),
+    /** Identifies the specific thing announced, so it is announced once. */
+    dedupeKey: text("dedupe_key").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("notifications_dedupe_idx").on(t.projectId, t.kind, t.dedupeKey)],
 );
 
 /* ── Quotes ───────────────────────────────────────────────────────────────── */

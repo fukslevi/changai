@@ -21,7 +21,8 @@ export type Activity =
   | "ready_to_send"
   | "draft"
   | "done"
-  | "stopped";
+  | "stopped"
+  | "paused";
 
 export interface ProjectStatus {
   id: string;
@@ -44,6 +45,7 @@ export const ACTIVITY_LABEL: Record<Activity, string> = {
   draft: "טיוטה",
   done: "הסתיים",
   stopped: "עצר",
+  paused: "כבוי",
 };
 
 /**
@@ -59,6 +61,7 @@ export const ACTIVITY_COLOUR: Record<Activity, string> = {
   draft: "var(--muted)",
   done: "var(--ok)",
   stopped: "var(--bad)",
+  paused: "var(--muted)",
 };
 
 export const ACTIVITY_DOT: Record<Activity, string> = ACTIVITY_COLOUR;
@@ -70,6 +73,7 @@ export const ACTIVITY_HINT: Record<Activity, string> = {
   draft: "עוד לא הועלה RFQ",
   done: "כולם קיבלו פנייה, כל מי שהתכוון לענות ענה, ההצעות בטבלה",
   stopped: "אין שיחה חיה ואין מה לשלוח - לא ימשיך מעצמו",
+  paused: "כיבית את הפרויקט - שום דבר לא רץ עד שתדליק אותו",
 };
 
 /**
@@ -110,14 +114,35 @@ export async function projectStatuses(
     db
       .select({
         projectId: supplierLeads.projectId,
+        supplierId: supplierLeads.supplierId,
         status: supplierLeads.status,
         email: supplierLeads.email,
+        takenOverAt: supplierLeads.takenOverAt,
       })
       .from(supplierLeads)
       .where(inArray(supplierLeads.projectId, ids)),
   ]);
 
   for (const project of rows) {
+    /*
+     * Off means off. Deriving a status for a paused project would describe
+     * work that is not happening - "11 conversations open" on something that
+     * has not sent an email since March.
+     */
+    if (project.pausedAt) {
+      out.set(project.id, {
+        id: project.id,
+        autonomous: project.autonomyTier >= 3,
+        activity: "paused",
+        liveThreads: 0,
+        openQuestions: 0,
+        waitingToSend: 0,
+        lastActivity: null,
+        nextAction: "כבוי - לא נשלח ולא נקרא כלום עד שתדליק",
+      });
+      continue;
+    }
+
     const sent = outreachRows.filter((o) => o.projectId === project.id);
     const live = sent.filter((o) => o.status === "sent" || o.status === "replied").length;
 
@@ -147,6 +172,18 @@ export async function projectStatuses(
      * inside the project and invisible from the list, which is the wrong way
      * round: the list is where you decide whether to open the project at all.
      */
+    /*
+     * A conversation the operator took over is theirs by their own decision,
+     * so it is not the agent waiting on them - counting it would leave the
+     * project amber forever, and an amber that never clears is a colour that
+     * stops meaning anything.
+     */
+    const claimed = new Set(
+      leadRows
+        .filter((l) => l.projectId === project.id && l.takenOverAt && l.supplierId)
+        .map((l) => l.supplierId),
+    );
+
     const mandate = await loadMandate(project.id);
     const held = mandate.mayNegotiatePrice
       ? 0
@@ -155,6 +192,7 @@ export async function projectStatuses(
             m.projectId === project.id &&
             m.direction === "inbound" &&
             !m.handledAt &&
+            !claimed.has(m.supplierId) &&
             (m.challenges === true || m.classification === "quotation"),
         ).length;
 

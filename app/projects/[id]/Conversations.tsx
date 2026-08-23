@@ -9,6 +9,7 @@ import {
   suggestReply,
   type InboxState,
 } from "@/lib/actions/inbox";
+import { releaseSupplier, type PauseState } from "@/lib/actions/pause";
 import { GAP_LABELS } from "@/lib/inbox/labels";
 
 export interface ThreadMessage {
@@ -47,6 +48,14 @@ export interface SupplierThread {
   email: string | null;
   website: string | null;
   matchScore: number | null;
+  /**
+   * Set once the operator has written to this supplier by hand.
+   *
+   * Scoped to this project and this factory: the rest of the project carries on
+   * under whatever mandate it had. Shown because a thread the agent has quietly
+   * stopped touching looks exactly like one it is about to answer.
+   */
+  takenOver: boolean;
   messages: ThreadMessage[];
 }
 
@@ -114,6 +123,7 @@ function Thread({
   const [draftState, draft] = useActionState<InboxState, FormData>(suggestReply, {});
   const [sendState, send] = useActionState<InboxState, FormData>(replyToSupplier, {});
   const [handleState, handle] = useActionState<InboxState, FormData>(markHandled, {});
+  const [releaseState, release] = useActionState<PauseState, FormData>(releaseSupplier, {});
 
   const lastInbound = [...thread.messages].reverse().find((m) => m.direction === "inbound");
   const analysis = lastInbound?.analysis ?? null;
@@ -145,12 +155,21 @@ function Thread({
           <span className="tag" style={{ color: STATUS_COLOUR[status] }}>
             {STATUS_LABEL[status] ?? status}
           </span>
-          {analysis?.needs_human && stillOpen && !autonomous && (
+          {thread.takenOver && (
+            <span
+              className="tag"
+              style={{ color: "var(--warn)" }}
+              title="ענית לספק הזה בעצמך, אז הסוכן לא נוגע בשיחה - לא עונה ולא שולח תזכורות. שאר הפרויקט ממשיך כרגיל."
+            >
+              אתה מנהל
+            </span>
+          )}
+          {!thread.takenOver && analysis?.needs_human && stillOpen && !autonomous && (
             <span className="tag" style={{ color: "var(--bad)" }}>
               דורש אותך
             </span>
           )}
-          {analysis?.needs_human && stillOpen && autonomous && (
+          {!thread.takenOver && analysis?.needs_human && stillOpen && autonomous && (
             <span className="tag" style={{ color: "var(--ok)" }}>
               ייענה אוטומטית
             </span>
@@ -220,10 +239,29 @@ function Thread({
             <Submit label="סמן כטופל" pendingLabel="…" ghost />
           </form>
         )}
+
+        {thread.takenOver && (
+          <form action={release}>
+            <input type="hidden" name="projectId" value={projectId} />
+            <input type="hidden" name="supplierId" value={thread.supplierId} />
+            <Submit label="החזר לסוכן" pendingLabel="…" ghost />
+          </form>
+        )}
       </div>
+
+      {thread.takenOver && (
+        <p className="muted" style={{ margin: "6px 0 0", fontSize: 12.5 }}>
+          השיחה הזאת אצלך מאז שענית בה ידנית. הסוכן לא יענה בה ולא ישלח בה תזכורות עד שתחזיר לו
+          אותה.
+        </p>
+      )}
 
       <Feedback state={draftState} />
       <Feedback state={handleState} />
+      {releaseState.error && <p className="error">{releaseState.error}</p>}
+      {releaseState.ok && (
+        <p style={{ color: "var(--ok)", fontSize: 13 }}>{releaseState.ok}</p>
+      )}
 
       {open && (
         <ul className="list" style={{ marginTop: 8 }}>

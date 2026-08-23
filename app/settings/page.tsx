@@ -59,6 +59,7 @@ export default async function SettingsPage() {
         <h2 dir="rtl">זהות השולח</h2>
         <SenderIdentity current={appSettings} />
         <Guide k="senderIdentity" />
+        <Guide k="notifications" />
       </section>
 
       {/* ── Connections ─────────────────────────────────────────────────── */}

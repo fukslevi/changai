@@ -11,6 +11,7 @@ const SettingsInput = z.object({
   senderTitle: z.string().trim().min(1, "תפקיד חובה"),
   sourcingMailbox: z.email("כתובת מייל לא תקינה"),
   companyName: z.string().trim().min(1, "שם החברה חובה"),
+  notifyEmail: z.email("כתובת מייל לא תקינה"),
 });
 
 export async function updateSettings(
@@ -22,6 +23,7 @@ export async function updateSettings(
     senderTitle: formData.get("senderTitle"),
     sourcingMailbox: formData.get("sourcingMailbox"),
     companyName: formData.get("companyName"),
+    notifyEmail: formData.get("notifyEmail"),
   });
 
   if (!parsed.success) {
