@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { asc, eq, sql } from "drizzle-orm";
 import { db, projects } from "@/lib/db";
 import { runAutopilot, triageAndPark, withinSendingHours, withinSupplierHours } from "@/lib/inbox/autopilot";
 import { runFollowUps } from "@/lib/inbox/followup";
@@ -53,7 +54,20 @@ export async function GET(request: Request) {
   const canContact = withinSendingHours();
   const summary: Record<string, unknown>[] = [];
 
-  for (const project of await db.select().from(projects)) {
+  /*
+   * Least recently cycled first.
+   *
+   * With a fixed order the deadline always falls on the same project - the one
+   * that sorts last was skipped on every single run while the first two were
+   * never skipped once. Rotating means a slow cycle costs every project a turn
+   * occasionally instead of costing one project every turn.
+   */
+  const queue = await db
+    .select()
+    .from(projects)
+    .orderBy(sql`${projects.lastCycledAt} asc nulls first`, asc(projects.createdAt));
+
+  for (const project of queue) {
     // A project that is switched off is switched off: nothing read, nothing
     // sent, nothing chased. Anything less makes the switch a decoration.
     if (project.pausedAt) {
@@ -78,6 +92,13 @@ export async function GET(request: Request) {
       // autonomous, whatever the setting says.
       const campaign = await runCampaign(project.id);
 
+      // Stamped on the way out, so a project that threw still moves down the
+      // queue - otherwise one broken project blocks the rotation permanently.
+      await db
+        .update(projects)
+        .set({ lastCycledAt: new Date() })
+        .where(eq(projects.id, project.id));
+
       summary.push({
         project: project.name,
         newMessages: inbox.newMessages,
@@ -92,6 +113,11 @@ export async function GET(request: Request) {
         errors: inbox.errors,
       });
     } catch (err) {
+      await db
+        .update(projects)
+        .set({ lastCycledAt: new Date() })
+        .where(eq(projects.id, project.id));
+
       summary.push({
         project: project.name,
         error: err instanceof Error ? err.message : String(err),

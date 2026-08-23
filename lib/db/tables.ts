@@ -135,6 +135,16 @@ export const projects = pgTable("projects", {
    * back to a person.
    */
   pausedAt: timestamp("paused_at", { withTimezone: true }),
+  /**
+   * When the scheduled cycle last got to this project.
+   *
+   * The cycle has a deadline and processes projects in order, so with a fixed
+   * order the last project is always the one that runs out of time - it was
+   * skipped on every run while the first two were never skipped once. Ordering
+   * by this column rotates the starvation instead of parking it on whichever
+   * project happens to sort last.
+   */
+  lastCycledAt: timestamp("last_cycled_at", { withTimezone: true }),
 
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
