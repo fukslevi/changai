@@ -15,15 +15,32 @@ import { readAttachment } from "./read";
 /** Per file, so one unreadable attachment does not crowd out the others. */
 const PER_FILE_CHARS = 8000;
 
-/** Anthropic caps a document at 32MB; a quote deck is far below that. */
-const MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
+/**
+ * Both caps are measured on the base64 payload, not on the file.
+ *
+ * This is the whole of the bug that got through the first fix. The limit was
+ * read as ten megabytes of image and applied to the file on disk, but what the
+ * API weighs is the encoded string in the request - a third larger. A 7.9MB
+ * photo passed a check written against 10MB of file and arrived as 10.5MB of
+ * base64, and the rejection took down the project's entire cycle, not just the
+ * one attachment.
+ *
+ * Comparing the encoded length removes the arithmetic: it is the same number
+ * the API is going to measure.
+ */
+const MAX_DOCUMENT_BASE64 = 30 * 1024 * 1024;
+const MAX_IMAGE_BASE64 = 10 * 1024 * 1024;
 
 /**
- * Images have their own, lower cap - 10MB - and exceeding it is rejected by the
- * API rather than truncated. A supplier's 10.5MB photo took down the whole
- * project's cycle, so oversize images are described instead of sent.
+ * And a budget across the whole message, not just per file.
+ *
+ * One supplier sent four photos of 6-8MB each. Every one of them is under the
+ * per-image cap and together they are 25MB of base64 in a request the API caps
+ * at 32MB - so a set of individually legal attachments fails as a group. The
+ * later ones are described instead; a quotation that needs the fifth photo to
+ * be legible is rare, and a cycle that dies is not.
  */
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_TOTAL_BASE64 = 18 * 1024 * 1024;
 
 /** A content block for the messages API, or a line of text for the brief. */
 export type ImageMediaType = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
@@ -56,6 +73,7 @@ export async function attachmentBlocks(
   attachments: { filename: string; mimeType: string; storagePath: string }[],
 ): Promise<AttachmentBlock[]> {
   const blocks: AttachmentBlock[] = [];
+  let spent = 0;
 
   for (const attachment of attachments) {
     const [stored] = await db.select().from(files).where(eq(files.id, attachment.storagePath));
@@ -71,7 +89,15 @@ export async function attachmentBlocks(
       continue;
     }
 
-    if (parsed.base64 && stored.content.length <= MAX_DOCUMENT_BYTES) {
+    if (parsed.base64 && spent + parsed.base64.length > MAX_TOTAL_BASE64) {
+      blocks.push({
+        type: "text",
+        text: `--- ${stored.filename} --- (not sent: the message already carries ${(spent / 1024 / 1024).toFixed(0)}MB of attachments)`,
+      });
+      continue;
+    }
+
+    if (parsed.base64 && parsed.base64.length <= MAX_DOCUMENT_BASE64) {
       blocks.push({ type: "text", text: `--- ${stored.filename} ---` });
       if (parsed.kind === "pdf") {
         blocks.push({
@@ -79,17 +105,19 @@ export async function attachmentBlocks(
           source: { type: "base64", media_type: "application/pdf", data: parsed.base64 },
           title: stored.filename,
         });
+        spent += parsed.base64.length;
       } else {
         const media = imageType(parsed.mediaType);
-        if (media && stored.content.length <= MAX_IMAGE_BYTES) {
+        if (media && parsed.base64.length <= MAX_IMAGE_BASE64) {
           blocks.push({
             type: "image",
             source: { type: "base64", media_type: media, data: parsed.base64 },
           });
+          spent += parsed.base64.length;
         } else if (media) {
           blocks.push({
             type: "text",
-            text: `(${stored.filename}: image too large to read, ${Math.round(stored.content.length / 1024 / 1024)}MB)`,
+            text: `(${stored.filename}: image too large to read, ${(stored.content.length / 1024 / 1024).toFixed(1)}MB)`,
           });
         } else {
           blocks.push({

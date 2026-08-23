@@ -16,7 +16,7 @@ async function main() {
   if (claimed.length === 0) console.log("no conversation has been taken over");
 
   for (const row of claimed) {
-    const [project] = await db.select().from(projects).where(eq(projects.id, row.projectId));
+    const project = (await db.select().from(projects).where(eq(projects.id, row.projectId)))[0]!;
     console.log(`${row.company} <- taken over ${row.at?.toISOString()}`);
     console.log(`  project: ${project.name}`);
     console.log(`  autonomyTier: ${project.autonomyTier} (3 = autonomous)`);
