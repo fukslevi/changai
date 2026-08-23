@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { db, projects } from "@/lib/db";
 import { runAutopilot, triageAndPark, withinSendingHours, withinSupplierHours } from "@/lib/inbox/autopilot";
 import { runFollowUps } from "@/lib/inbox/followup";
-import { dispatchNotifications } from "@/lib/notify/dispatch";
 import { runCampaign } from "@/lib/outreach/campaign";
 import { markCycleRun } from "@/lib/settings";
 import { pollInbox } from "@/lib/inbox/run";
+import { authorised } from "./auth";
 
 /**
  * One cycle of the agent, for a scheduler to call.
@@ -19,6 +19,11 @@ import { pollInbox } from "@/lib/inbox/run";
  * business hours, so the queue is always current when someone opens the page
  * while nothing lands in a supplier's inbox at three in the morning.
  *
+ * Announcements are not here. They live at /api/cron/notify, called straight
+ * after this one, because when this route overran the alert was the first
+ * thing dropped - and an alert that never arrives is the one failure that
+ * makes an unwatched project unusable.
+ *
  * Two schedules can drive this and they are deliberately unequal. Vercel's own
  * cron is capped at once a day on the Hobby plan, so it is set to 03:00 UTC -
  * late morning in China, the one daily slot where sending is allowed. The
@@ -31,16 +36,6 @@ import { pollInbox } from "@/lib/inbox/run";
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
-function authorised(request: Request): boolean {
-  const secret = process.env.CRON_SECRET;
-  // Without a secret configured the route stays shut rather than open: an
-  // unauthenticated endpoint here can send mail to suppliers.
-  if (!secret) return false;
-
-  const header = request.headers.get("authorization") ?? "";
-  return header === `Bearer ${secret}`;
-}
-
 export async function GET(request: Request) {
   if (!authorised(request)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -52,7 +47,7 @@ export async function GET(request: Request) {
    * work. Stop cleanly instead: whatever is left is picked up next time,
    * because every step reads its own state rather than a position in a loop.
    */
-  const deadline = Date.now() + 200_000;
+  const deadline = Date.now() + 170_000;
 
   const canReply = withinSupplierHours();
   const canContact = withinSendingHours();
@@ -104,26 +99,9 @@ export async function GET(request: Request) {
     }
   }
 
-  /*
-   * Announcements go last, after the cycle has changed whatever it was going
-   * to change. Notifying first would describe the state on the way in, which
-   * is the one state the operator does not need - it is about to be wrong.
-   */
-  let notified: unknown[] = [];
-  try {
-    notified = await dispatchNotifications();
-  } catch (err) {
-    notified = [{ error: err instanceof Error ? err.message : String(err) }];
-  }
-
   // Stamped whatever happened: the useful fact is that the loop ran, not that
   // it found work.
   await markCycleRun();
 
-  return NextResponse.json({
-    replyWindow: canReply,
-    contactWindow: canContact,
-    projects: summary,
-    notified,
-  });
+  return NextResponse.json({ replyWindow: canReply, contactWindow: canContact, projects: summary });
 }

@@ -37,4 +37,24 @@ jobs:
             exit 1
           fi
 
+      # Always, even if the cycle above failed or timed out. What it announces
+      # is whatever is in the database now, and a cycle that fell over is a
+      # cycle whose open questions are still open. This used to run at the end
+      # of the cycle itself, where it was the first thing lost when the cycle
+      # overran - which is backwards: a mailbox read two hours late costs two
+      # hours, an alert that never arrives costs the premise of the project.
+      - name: Send notifications
+        if: always()
+        run: |
+          response=$(curl -sS --max-time 130 -w "\n%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.APP_URL }}/api/cron/notify")
+          body=$(echo "$response" | head -n -1)
+          code=$(echo "$response" | tail -n 1)
+          echo "$body"
+          if [ "$code" != "200" ]; then
+            echo "::error::notify returned $code"
+            exit 1
+          fi
+
 # Registered with Actions on first push after repo creation.
