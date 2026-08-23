@@ -70,7 +70,7 @@ export async function silentThreads(projectId: string): Promise<SilentThread[]> 
       supplierId: messages.supplierId,
       company: suppliers.companyName,
       direction: messages.direction,
-      subject: messages.subject,
+      outboundKind: messages.outboundKind,
       receivedAt: messages.receivedAt,
     })
     .from(messages)
@@ -94,9 +94,17 @@ export async function silentThreads(projectId: string): Promise<SilentThread[]> 
     };
 
     if (row.direction === "inbound") entry.inbound++;
-    // A chase is an outbound message we sent with nothing from them in between;
-    // marking them at send time is simpler than inferring it later.
-    if (row.direction === "outbound" && (row.subject ?? "").startsWith("Chase:")) entry.chases++;
+    /*
+     * Counted from the row's own marker.
+     *
+     * This used to look for a "Chase:" prefix on the subject that sendReply
+     * accepted as an option and then never applied - so every chase counted as
+     * zero, the two-attempt limit never engaged, and the first follow-up would
+     * have gone out again every four days for as long as the supplier stayed
+     * quiet. A count that reads a field nothing writes is worse than no count:
+     * it looks like a limit.
+     */
+    if (row.direction === "outbound" && row.outboundKind === "chase") entry.chases++;
 
     if (row.receivedAt >= entry.last) {
       entry.last = row.receivedAt;
@@ -200,7 +208,7 @@ export async function runFollowUps(
         projectId,
         thread.supplierId,
         chaseBody(project.name, attempt, thread.everReplied),
-        { subjectPrefix: "Chase:" },
+        { kind: "chase" },
       );
     }
     result.chased.push({ company: thread.company, attempt });

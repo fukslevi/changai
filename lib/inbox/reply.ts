@@ -169,7 +169,7 @@ export async function sendReply(
   projectId: string,
   supplierId: string,
   body: string,
-  options: { subjectPrefix?: string } = {},
+  options: { kind?: "reply" | "chase" } = {},
 ): Promise<ReplyResult> {
   const [supplier] = await db.select().from(suppliers).where(eq(suppliers.id, supplierId));
   if (!supplier?.email) throw new Error("לספק אין כתובת מייל");
@@ -225,6 +225,7 @@ export async function sendReply(
       fromAddress: settings.sourcingMailbox,
       subject,
       bodyText: body.trim(),
+      outboundKind: options.kind ?? "reply",
       receivedAt: new Date(),
     })
     .onConflictDoNothing();

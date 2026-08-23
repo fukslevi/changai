@@ -411,6 +411,17 @@ export const messages = pgTable(
     subject: text("subject"),
     bodyText: text("body_text"),
     /**
+     * What an outbound message was for.
+     *
+     * Follow-ups used to be identified by a "Chase:" prefix on the subject,
+     * which was never actually applied - so every chase counted as zero chases,
+     * the two-attempt limit never engaged, and the same "I have not heard back"
+     * would have gone out every few days forever. Marking the row is the honest
+     * version: the supplier still sees a normal "Re:", and the count comes from
+     * a field that cannot silently disagree with the text.
+     */
+    outboundKind: text("outbound_kind").$type<"reply" | "chase">(),
+    /**
      * The Fiddle Leaf lesson: the numbers are in the attachment, the
      * intelligence ("over length for Amazon warehouse") is in the body.
      * Both get parsed.
