@@ -51,7 +51,7 @@ export async function GET(request: Request) {
    * work. Stop cleanly instead: whatever is left is picked up next time,
    * because every step reads its own state rather than a position in a loop.
    */
-  const deadline = Date.now() + 240_000;
+  const deadline = Date.now() + 200_000;
 
   const canReply = withinSupplierHours();
   const canContact = withinSendingHours();

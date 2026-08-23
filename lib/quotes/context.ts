@@ -18,6 +18,13 @@ const PER_FILE_CHARS = 8000;
 /** Anthropic caps a document at 32MB; a quote deck is far below that. */
 const MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
 
+/**
+ * Images have their own, lower cap - 10MB - and exceeding it is rejected by the
+ * API rather than truncated. A supplier's 10.5MB photo took down the whole
+ * project's cycle, so oversize images are described instead of sent.
+ */
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+
 /** A content block for the messages API, or a line of text for the brief. */
 export type ImageMediaType = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
 
@@ -74,10 +81,15 @@ export async function attachmentBlocks(
         });
       } else {
         const media = imageType(parsed.mediaType);
-        if (media) {
+        if (media && stored.content.length <= MAX_IMAGE_BYTES) {
           blocks.push({
             type: "image",
             source: { type: "base64", media_type: media, data: parsed.base64 },
+          });
+        } else if (media) {
+          blocks.push({
+            type: "text",
+            text: `(${stored.filename}: image too large to read, ${Math.round(stored.content.length / 1024 / 1024)}MB)`,
           });
         } else {
           blocks.push({
