@@ -261,6 +261,41 @@ export const items = pgTable(
   (t) => [index("items_project_idx").on(t.projectId)],
 );
 
+/**
+ * Every change to a target price, and why.
+ *
+ * Overwriting the number would lose the one thing that makes a comparison
+ * readable later. Three factories told us $7.70 was unreachable; if the target
+ * quietly becomes $9.50, Peitai's quote turns from +31% into +6% and nothing on
+ * the page explains why the same offer suddenly looks good. The gap is only
+ * meaningful next to the number it was measured against.
+ *
+ * It is also what tells the agent who to go back to. A target that moves up
+ * makes the suppliers who refused the old one worth another conversation, and a
+ * target that moves down puts quotes we had accepted back in play.
+ */
+export const targetRevisions = pgTable(
+  "target_revisions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => items.id, { onDelete: "cascade" }),
+    /** Null when the change applied to every quantity tier at once. */
+    qty: integer("qty"),
+    /** Null when the RFQ never carried a target for this tier. */
+    previousUsd: numeric("previous_usd", { precision: 10, scale: 2 }).$type<string>(),
+    newUsd: numeric("new_usd", { precision: 10, scale: 2 }).$type<string>().notNull(),
+    /** Hebrew, from the operator. Shown next to the number wherever it appears. */
+    reasonHe: text("reason_he"),
+    changedAt: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("target_revisions_project_idx").on(t.projectId, t.itemId)],
+);
+
 export const requirements = pgTable(
   "requirements",
   {

@@ -13,6 +13,8 @@ import { OpenQuestions } from "./OpenQuestions";
 import { SideNav, type NavSection } from "./SideNav";
 import { Autostart } from "./Autostart";
 import { Comparison } from "./Comparison";
+import { TargetPrice } from "./TargetPrice";
+import { revisionsFor } from "@/lib/pricing/revise";
 import { buildComparison } from "@/lib/quotes/compare";
 import { Autonomy } from "./Autonomy";
 import { Pause } from "./Pause";
@@ -65,6 +67,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const pricing = await projectPricing(id);
   const mandate = await loadMandate(id);
   const comparison = await buildComparison(id);
+  const revisions = await revisionsFor(id);
 
   const { open, answered } = await pendingQuestions(id);
   // Same source as the list page, so the two views can never disagree about
@@ -296,7 +299,43 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           </span>
         </h2>
         <Guide k="comparison" />
-        <Comparison data={comparison} />
+        <Comparison
+          data={comparison}
+          latestRevision={revisions.length > 0 ? revisions[revisions.length - 1] : null}
+        />
+
+        <details open={comparison.suppliers.length > 0 && comparison.refusals > 0}>
+          <summary>
+            <h2 style={{ display: "inline", fontSize: 16 }}>
+              מחיר מטרה{" "}
+              {revisions.length > 0 && (
+                <span className="muted">({revisions.length} עדכונים)</span>
+              )}
+            </h2>
+          </summary>
+          <Guide k="targetPrice" />
+          <TargetPrice
+            projectId={project.id}
+            items={projectItems
+              .filter((item) => item.kind === "priced_variant")
+              .map((item) => ({
+                id: item.id,
+                name: item.name,
+                targets: item.targetPrices.map((p) => ({
+                  qty: p.qty,
+                  unitPrice: p.unit_price,
+                })),
+              }))}
+            revisions={revisions.map((r) => ({
+              itemName: r.itemName,
+              qty: r.qty,
+              previousUsd: r.previousUsd,
+              newUsd: r.newUsd,
+              reasonHe: r.reasonHe,
+              changedAt: r.changedAt,
+            }))}
+          />
+        </details>
       </section>
 
       <section id="step-inbox" className="card stack">

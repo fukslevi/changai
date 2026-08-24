@@ -12,7 +12,28 @@ function money(value: number | null): string {
   return value === null ? "-" : `$${value.toFixed(2)}`;
 }
 
-export function Comparison({ data }: { data: Comparison }) {
+export interface TargetNote {
+  itemName: string | null;
+  qty: number | null;
+  previousUsd: string | null;
+  newUsd: string;
+  reasonHe: string | null;
+  changedAt: Date;
+}
+
+export function Comparison({
+  data,
+  latestRevision,
+}: {
+  data: Comparison;
+  /**
+   * Shown next to the target, because the gap is measured against it.
+   *
+   * A reader who sees +6% and does not know the target moved last week is
+   * reading a different number than the one that was negotiated.
+   */
+  latestRevision?: TargetNote | null;
+}) {
   if (data.suppliers.length === 0) {
     return (
       <p className="muted" dir="rtl" style={{ margin: 0 }}>
@@ -39,6 +60,27 @@ export function Comparison({ data }: { data: Comparison }) {
           </>
         )}
       </p>
+
+      {latestRevision && (
+        <p
+          className="muted"
+          style={{ margin: 0, fontSize: 12.5, color: "var(--warn)" }}
+        >
+          מחיר המטרה עודכן{" "}
+          {new Date(latestRevision.changedAt).toLocaleDateString("he-IL", {
+            day: "2-digit",
+            month: "2-digit",
+          })}
+          {": "}
+          <span dir="ltr">
+            {latestRevision.previousUsd ? `$${Number(latestRevision.previousUsd).toFixed(2)}` : "-"}
+            {" ← "}
+            ${Number(latestRevision.newUsd).toFixed(2)}
+          </span>
+          {latestRevision.reasonHe ? ` · ${latestRevision.reasonHe}` : ""}
+          {" · הפערים למטה נמדדים מול המחיר החדש"}
+        </p>
+      )}
 
       {priced.map((supplier) => (
         <div key={supplier.supplierId} className="stack" style={{ gap: 6 }}>
