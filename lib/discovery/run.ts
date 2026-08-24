@@ -1,5 +1,6 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { db, projects, requirements, supplierLeads } from "../db";
+import { generateAngles } from "./angles";
 import { enrichDomain } from "./enrich";
 import { scoreCandidates, type Candidate } from "./score";
 import { findCandidates } from "./search";
@@ -20,6 +21,15 @@ const ENRICH_CONCURRENCY = 5;
  * only makes the operator scroll past thirty rows to reach the five that matter.
  */
 const MIN_SCORE_TO_STORE = 20;
+
+/**
+ * The score at which a lead is written to without anyone looking.
+ *
+ * Shared with the auto-approval step on purpose: the target is a number of
+ * outreaches, so the only leads that count towards it are the ones that will
+ * actually become one.
+ */
+export const AUTO_APPROVE_SCORE = 30;
 
 /**
  * How many usable leads a project should end up with.
@@ -57,15 +67,52 @@ const BROADENING_SUFFIXES = [
   "contract manufacturer China",
 ];
 
+/** How many product-specific angles are generated once the generic ones run out. */
+const MAX_GENERATED_ANGLES = 14;
+
 /**
  * Passes before the shortlist is accepted as final.
  *
- * One per angle, plus the operator's own keywords. It used to be four - fewer
- * than the angles available - so the search gave up having tried a third of
- * what it knew how to try. A product with few manufacturers still ends early,
- * because every round stops as soon as the target is reached.
+ * The operator's keywords, then every generic angle, then the ones invented
+ * from the product itself. It used to be four - fewer than the angles that
+ * already existed - so the search gave up having tried a third of what it knew
+ * how to try. A product with few manufacturers still ends early, because every
+ * round stops as soon as the target is reached.
  */
-export const MAX_DISCOVERY_RUNS = BROADENING_SUFFIXES.length + 1;
+export const MAX_DISCOVERY_RUNS = BROADENING_SUFFIXES.length + MAX_GENERATED_ANGLES + 1;
+
+
+/**
+ * What to search on a given round.
+ *
+ * Round 0 is the operator's own keywords. The next twelve bolt a generic angle
+ * onto them. After that the queries come from the product - generated once and
+ * stored, because a factory names itself by material, process and standard, and
+ * no fixed list of suffixes knows what those are for a given product.
+ */
+async function queriesForRound(
+  project: typeof projects.$inferSelect,
+  round: number,
+  projectRequirements: string[],
+): Promise<string[]> {
+  if (round === 0) return project.keywords;
+
+  if (round <= BROADENING_SUFFIXES.length) {
+    return project.keywords.map((k) => `${k} ${BROADENING_SUFFIXES[round - 1]}`);
+  }
+
+  let angles = project.searchAngles;
+  if (!angles || angles.length === 0) {
+    angles = await generateAngles(project.name, project.keywords, projectRequirements);
+    await db.update(projects).set({ searchAngles: angles }).where(eq(projects.id, project.id));
+    // Keep the in-memory copy in step so later rounds in this same call do not
+    // regenerate and overwrite.
+    project.searchAngles = angles;
+  }
+
+  const angle = angles[round - BROADENING_SUFFIXES.length - 1];
+  return angle ? [angle.query] : [];
+}
 
 async function inBatches<T, R>(
   items: T[],
@@ -161,38 +208,60 @@ export async function runDiscovery(
   const startRound = project.discoveryRuns ?? 0;
 
   const already = await db
-    .select({ domain: supplierLeads.domain, email: supplierLeads.email })
+    .select({
+      domain: supplierLeads.domain,
+      email: supplierLeads.email,
+      status: supplierLeads.status,
+      matchScore: supplierLeads.matchScore,
+    })
     .from(supplierLeads)
     .where(eq(supplierLeads.projectId, projectId));
 
   const seenDomains = new Set(already.map((r) => r.domain));
 
   /*
-   * The target counts leads we can actually write to.
+   * The target counts leads that will become an outreach, and nothing else.
    *
-   * Counting raw candidates stopped the search at 28 stored leads: it saw
-   * thirty domains in hand and called it done, before scoring dropped the
-   * retailers and enrichment failed to find an address for a third of the
-   * rest. A domain nobody can email is not a supplier on the list, so it does
-   * not count towards a list of thirty.
+   * It counted raw candidate domains first, and stopped at 28 stored leads
+   * because it saw thirty in hand - before scoring dropped the retailers and
+   * enrichment failed on a third of the rest. Counting addresses instead was
+   * closer but still wrong: LED WORKING LIGHT reached 34 contactable leads,
+   * discovery declared the target met, and 25 emails went out. The other nine
+   * had addresses and scores in the twenties - Wald, Hailo, WernerCo, American
+   * brands rather than Chinese factories - so they were never going to be
+   * written to.
+   *
+   * A lead that cannot be emailed, or that will not clear the approval bar, is
+   * not one of the thirty. Counting anything looser means the search stops
+   * while the number the operator actually watches is still short.
    */
-  const contactable = already.filter((r) => r.email).length;
+  const usable = already.filter(
+    (r) =>
+      (r.email !== null || r.status === "contacted") &&
+      (r.matchScore ?? 0) >= AUTO_APPROVE_SCORE &&
+      r.status !== "rejected",
+  ).length;
+
+  const projectRequirements = (
+    await db
+      .select({ text: requirements.text })
+      .from(requirements)
+      .where(eq(requirements.projectId, projectId))
+  ).map((r) => r.text);
 
   const hits: Awaited<ReturnType<typeof findCandidates>> = [];
   let roundsRun = 0;
 
   for (let i = 0; i < maxRounds; i++) {
     const round = startRound + i;
-    if (round > BROADENING_SUFFIXES.length) break;
-    if (contactable + hits.length >= target) break;
+    if (round >= MAX_DISCOVERY_RUNS) break;
+    if (usable + hits.length >= target) break;
     // The cycle has a budget and search is the most expensive thing in it.
     // Stopping between rounds costs nothing: the next call resumes here.
     if (options.deadline && Date.now() > options.deadline) break;
 
-    const keywords =
-      round === 0
-        ? project.keywords
-        : project.keywords.map((k) => `${k} ${BROADENING_SUFFIXES[round - 1]}`);
+    const keywords = await queriesForRound(project, round, projectRequirements);
+    if (keywords.length === 0) break;
 
     const found = await findCandidates(keywords);
     roundsRun++;
@@ -218,16 +287,7 @@ export async function runDiscovery(
     companyText: contact.companyText,
   }));
 
-  const projectRequirements = await db
-    .select({ text: requirements.text })
-    .from(requirements)
-    .where(eq(requirements.projectId, projectId));
-
-  const scores = await scoreCandidates(
-    project.name,
-    projectRequirements.map((r) => r.text),
-    candidates,
-  );
+  const scores = await scoreCandidates(project.name, projectRequirements, candidates);
   const scoreByDomain = new Map(scores.map((s) => [s.domain, s]));
 
   // Replace previous pending leads; approved and rejected decisions survive so

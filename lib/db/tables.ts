@@ -127,6 +127,12 @@ export const projects = pgTable("projects", {
    */
   discoveryRuns: integer("discovery_runs").notNull().default(0),
   /**
+   * Search phrases invented from this product, used once the generic angles
+   * are spent. Stored because they depend on the product and nothing else, so
+   * regenerating them every round would pay for the same answer repeatedly.
+   */
+  searchAngles: jsonb("search_angles").$type<{ query: string; reason: string }[]>(),
+  /**
    * Set to stop the project entirely.
    *
    * Nothing is sent, read or chased while it is set - the whole project stands
