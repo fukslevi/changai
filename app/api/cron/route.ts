@@ -90,7 +90,7 @@ export async function GET(request: Request) {
       // First contact goes out on the same schedule as everything else. A
       // project that is ready to write to suppliers and simply waits is not
       // autonomous, whatever the setting says.
-      const campaign = await runCampaign(project.id);
+      const campaign = await runCampaign(project.id, { deadline });
 
       // Stamped on the way out, so a project that threw still moves down the
       // queue - otherwise one broken project blocks the rotation permanently.

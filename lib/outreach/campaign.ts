@@ -9,19 +9,34 @@
  */
 import { eq } from "drizzle-orm";
 import { db, projects, supplierLeads } from "../db";
-import { MAX_DISCOVERY_RUNS, runDiscovery, TARGET_LEADS } from "../discovery/run";
+import { MAX_DISCOVERY_RUNS, reenrichMissing, runDiscovery, TARGET_LEADS } from "../discovery/run";
 import { approveAllAbove } from "../actions/discovery";
 import { campaignStatus, prepareCampaign, sendNext } from "./batch";
 
 /**
  * Enough to make progress every couple of hours, few enough that a mistake is
- * caught before it reaches a whole shortlist. Eight suppliers take three runs.
+ * caught before it reaches a whole shortlist. Three was too cautious once the
+ * target became thirty: at three every two hours a full shortlist takes most
+ * of a day to write to, and the pacing that matters to a supplier is the gap
+ * between messages, not how many other factories heard from us today.
  */
-const MAX_PER_RUN = 3;
+const MAX_PER_RUN = 6;
 
-/** Seconds between sends inside one run. */
+/** How long one cycle may spend searching before it moves on. */
+const DISCOVERY_BUDGET_MS = 70_000;
+
+/**
+ * Seconds between sends inside one run.
+ *
+ * It was 25-45s, which at six sends is nearly four minutes of a cycle that has
+ * under three - the pause alone would decide how many suppliers got written to.
+ * The gap is there so a shortlist does not arrive as one visible blast, and
+ * eight to twenty seconds does that: these are separate emails to separate
+ * companies, and a person working through a sourcing list sends them about
+ * this fast.
+ */
 function pauseMs(): number {
-  return 25_000 + Math.floor(Math.random() * 20_000);
+  return 8_000 + Math.floor(Math.random() * 12_000);
 }
 
 export interface CampaignRun {
@@ -31,7 +46,11 @@ export interface CampaignRun {
   skipped: string | null;
 }
 
-export async function runCampaign(projectId: string): Promise<CampaignRun> {
+export async function runCampaign(
+  projectId: string,
+  options: { deadline?: number } = {},
+): Promise<CampaignRun> {
+  const deadline = options.deadline ?? Date.now() + 150_000;
   const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
   if (!project) return { sent: [], failed: [], remaining: 0, skipped: "no project" };
 
@@ -50,14 +69,43 @@ export async function runCampaign(projectId: string): Promise<CampaignRun> {
   ).length;
 
   if (leadCount < TARGET_LEADS && (project.discoveryRuns ?? 0) < MAX_DISCOVERY_RUNS) {
-    // One broadening round per cycle. The cycle has a time budget and discovery
-    // is the most expensive thing in it.
-    await runDiscovery(projectId, { maxRounds: 1 });
-    const data = new FormData();
-    data.set("projectId", projectId);
-    data.set("threshold", "30");
-    await approveAllAbove({}, data);
+    /*
+     * Several angles per cycle now, bounded by a clock rather than a count.
+     * One round every two hours means a dozen angles take a day and a half to
+     * try, which is not what "find me thirty suppliers" means to anyone. The
+     * deadline is what keeps it from starving the rest of the cycle, and a
+     * round that does not fit simply happens next time.
+     */
+    await runDiscovery(projectId, {
+      maxRounds: 4,
+      // Never more than half of what is left, so searching cannot eat the
+      // sending it is supposed to be feeding.
+      deadline: Math.min(Date.now() + DISCOVERY_BUDGET_MS, Date.now() + (deadline - Date.now()) / 2),
+    });
   }
+
+  /*
+   * Then give the addressless leads another go, before approving. A lead with
+   * no email cannot be approved, so the order matters: enrich, then approve,
+   * then send.
+   */
+  if (Date.now() < deadline - 20_000) {
+    await reenrichMissing(projectId, { limit: 8, deadline: deadline - 15_000 });
+  }
+
+  /*
+   * Approving is outside the discovery gate, and that is the whole point.
+   *
+   * It used to sit inside, so once a project ran out of discovery rounds it
+   * also stopped approving - LED WORKING LIGHT had four leads with addresses
+   * and good scores sitting pending forever, while the page said five
+   * suppliers had been contacted. Nothing was searching and nothing was
+   * approving, and the two failures looked like one.
+   */
+  const data = new FormData();
+  data.set("projectId", projectId);
+  data.set("threshold", "30");
+  await approveAllAbove({}, data);
 
   const status = await campaignStatus(projectId);
   if (status.pending.length === 0) {
@@ -72,6 +120,8 @@ export async function runCampaign(projectId: string): Promise<CampaignRun> {
   const run: CampaignRun = { sent: [], failed: [], remaining: status.pending.length, skipped: null };
 
   for (let i = 0; i < MAX_PER_RUN; i++) {
+    if (Date.now() > deadline) break;
+
     const outcome = await sendNext(projectId, prepared);
     if (!outcome) break;
 

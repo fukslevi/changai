@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db, projects, requirements, supplierLeads } from "../db";
 import { enrichDomain } from "./enrich";
 import { scoreCandidates, type Candidate } from "./score";
@@ -32,19 +32,15 @@ const MIN_SCORE_TO_STORE = 20;
 export const TARGET_LEADS = 30;
 
 /**
- * Passes before the shortlist is accepted as final.
- *
- * A product with few manufacturers should not be searched again on every cycle
- * forever, finding the same companies each time and paying for it.
- */
-export const MAX_DISCOVERY_RUNS = 4;
-
-/**
  * Extra angles to search when the first pass falls short.
  *
  * A factory describes itself by material, process and market, and the operator's
  * keywords usually cover only one of those. These add the others rather than
  * repeating the same query with more pages, which returns the same companies.
+ *
+ * The regional ones earn their place: a Chinese manufacturer's own site names
+ * its province far more reliably than it uses the word "OEM", and the clusters
+ * are real - metalwork in Guangdong and Zhejiang, lighting in Zhongshan.
  */
 const BROADENING_SUFFIXES = [
   "OEM factory",
@@ -53,7 +49,23 @@ const BROADENING_SUFFIXES = [
   "supplier export",
   "factory price",
   "custom manufacturer",
+  "ODM manufacturer",
+  "Guangdong factory",
+  "Zhejiang manufacturer",
+  "Ningbo supplier",
+  "trading company export China",
+  "contract manufacturer China",
 ];
+
+/**
+ * Passes before the shortlist is accepted as final.
+ *
+ * One per angle, plus the operator's own keywords. It used to be four - fewer
+ * than the angles available - so the search gave up having tried a third of
+ * what it knew how to try. A product with few manufacturers still ends early,
+ * because every round stops as soon as the target is reached.
+ */
+export const MAX_DISCOVERY_RUNS = BROADENING_SUFFIXES.length + 1;
 
 async function inBatches<T, R>(
   items: T[],
@@ -67,6 +79,55 @@ async function inBatches<T, R>(
   return out;
 }
 
+
+/**
+ * Try again for the leads with no address.
+ *
+ * A lead nobody can write to is not a lead, and a third of what discovery
+ * stores lands that way - the site was slow, the contact page was an image, the
+ * form had no mailto behind it. They then sit in the list forever looking like
+ * progress: nineteen suppliers found, nine that can actually be contacted.
+ *
+ * Worth retrying rather than writing off, because the extraction itself keeps
+ * improving - several of these were stored by a version that stripped `www.`
+ * and guessed paths instead of following the site's own links.
+ */
+export async function reenrichMissing(
+  projectId: string,
+  options: { limit?: number; deadline?: number } = {},
+): Promise<{ tried: number; found: number }> {
+  const limit = options.limit ?? 8;
+
+  const missing = await db
+    .select({ id: supplierLeads.id, domain: supplierLeads.domain, url: supplierLeads.sourceUrl })
+    .from(supplierLeads)
+    .where(and(eq(supplierLeads.projectId, projectId), isNull(supplierLeads.email)))
+    .limit(limit);
+
+  let found = 0;
+  let tried = 0;
+
+  for (const lead of missing) {
+    if (options.deadline && Date.now() > options.deadline) break;
+    tried++;
+
+    try {
+      const contact = await enrichDomain(lead.domain, { seedUrl: lead.url ?? undefined });
+      if (!contact.primaryEmail) continue;
+
+      await db
+        .update(supplierLeads)
+        .set({ email: contact.primaryEmail })
+        .where(eq(supplierLeads.id, lead.id));
+      found++;
+    } catch {
+      // A site that will not answer is not a failure worth stopping for.
+    }
+  }
+
+  return { tried, found };
+}
+
 /**
  * keywords -> search -> company site -> email -> score -> pending leads.
  *
@@ -75,36 +136,58 @@ async function inBatches<T, R>(
  */
 export async function runDiscovery(
   projectId: string,
-  options: { target?: number; maxRounds?: number } = {},
+  options: { target?: number; maxRounds?: number; deadline?: number } = {},
 ): Promise<DiscoveryResult> {
   const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
   if (!project) throw new Error("Project not found");
   if (project.keywords.length === 0) throw new Error("Add keywords before running discovery");
 
   const target = options.target ?? TARGET_LEADS;
-  /*
-   * Rounds per call, not per project. Searching every angle in one go takes
-   * minutes, and putting that inside the scheduled cycle made the whole cycle
-   * time out - one expensive step starving every cheap one behind it. The
-   * cycle asks for one round and comes back in two hours.
-   */
-  const maxRounds = options.maxRounds ?? BROADENING_SUFFIXES.length + 1;
+  const maxRounds = options.maxRounds ?? MAX_DISCOVERY_RUNS;
 
   /*
-   * Keep searching until the shortlist is big enough, widening the angle each
-   * round rather than digging deeper into the same query. Bounded: a product
-   * with few manufacturers should end with a short list, not an endless search.
+   * Where this call starts is where the last one stopped.
+   *
+   * This is the bug that kept every project at nineteen leads. The round index
+   * was a loop counter that restarted at zero on every call, and the scheduled
+   * top-up asked for one round - so round was always 0, which is the branch
+   * that uses the operator's keywords unchanged. Four scheduled rounds ran the
+   * identical original query four times, found the identical companies, and
+   * spent the whole budget without ever using a single broadening angle.
+   *
+   * Reading the offset from the project makes the counter mean what its name
+   * always claimed: how many angles have been tried.
    */
+  const startRound = project.discoveryRuns ?? 0;
+
   const already = await db
-    .select({ domain: supplierLeads.domain })
+    .select({ domain: supplierLeads.domain, email: supplierLeads.email })
     .from(supplierLeads)
     .where(eq(supplierLeads.projectId, projectId));
 
   const seenDomains = new Set(already.map((r) => r.domain));
-  const hits: Awaited<ReturnType<typeof findCandidates>> = [];
 
-  for (let round = 0; round < maxRounds && round <= BROADENING_SUFFIXES.length; round++) {
-    if (seenDomains.size + hits.length >= target) break;
+  /*
+   * The target counts leads we can actually write to.
+   *
+   * Counting raw candidates stopped the search at 28 stored leads: it saw
+   * thirty domains in hand and called it done, before scoring dropped the
+   * retailers and enrichment failed to find an address for a third of the
+   * rest. A domain nobody can email is not a supplier on the list, so it does
+   * not count towards a list of thirty.
+   */
+  const contactable = already.filter((r) => r.email).length;
+
+  const hits: Awaited<ReturnType<typeof findCandidates>> = [];
+  let roundsRun = 0;
+
+  for (let i = 0; i < maxRounds; i++) {
+    const round = startRound + i;
+    if (round > BROADENING_SUFFIXES.length) break;
+    if (contactable + hits.length >= target) break;
+    // The cycle has a budget and search is the most expensive thing in it.
+    // Stopping between rounds costs nothing: the next call resumes here.
+    if (options.deadline && Date.now() > options.deadline) break;
 
     const keywords =
       round === 0
@@ -112,6 +195,7 @@ export async function runDiscovery(
         : project.keywords.map((k) => `${k} ${BROADENING_SUFFIXES[round - 1]}`);
 
     const found = await findCandidates(keywords);
+    roundsRun++;
     for (const hit of found) {
       if (seenDomains.has(hit.domain)) continue;
       if (hits.some((h) => h.domain === hit.domain)) continue;
@@ -154,9 +238,11 @@ export async function runDiscovery(
     .where(eq(supplierLeads.projectId, projectId));
   const decided = new Set(existing.filter((e) => e.status !== "pending").map((e) => e.domain));
 
+  // Counted in angles actually tried, not calls made. A call that stopped on
+  // its deadline before searching must not burn an angle it never used.
   await db
     .update(projects)
-    .set({ discoveryRuns: (project.discoveryRuns ?? 0) + 1 })
+    .set({ discoveryRuns: startRound + roundsRun })
     .where(eq(projects.id, projectId));
 
   let saved = 0;

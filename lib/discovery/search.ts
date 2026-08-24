@@ -133,7 +133,13 @@ export async function findCandidates(
   keywords: string[],
   options: { perQuery?: number } = {},
 ): Promise<(SearchHit & { matchedQueries: string[] })[]> {
-  const perQuery = options.perQuery ?? 10;
+  /*
+   * Twenty, not ten. Serper bills per query rather than per result, so the
+   * second ten cost nothing extra and the manufacturers rarely rank first -
+   * page one of a product term is retail, and the factories start appearing
+   * where the brands run out.
+   */
+  const perQuery = options.perQuery ?? 20;
   const byDomain = new Map<string, SearchHit & { matchedQueries: string[] }>();
   const queries = [...new Set(keywords.flatMap(expandQuery))];
 
