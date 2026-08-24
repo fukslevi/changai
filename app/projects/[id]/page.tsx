@@ -19,6 +19,7 @@ import { buildComparison } from "@/lib/quotes/compare";
 import { Autonomy } from "./Autonomy";
 import { Pause } from "./Pause";
 import { campaignStatus } from "@/lib/outreach/batch";
+import { mayStartOutreach, slotState } from "@/lib/outreach/slot";
 import { projectPricing } from "@/lib/pricing/project";
 import { conversations } from "@/lib/inbox/run";
 import { pendingQuestions } from "@/lib/questions";
@@ -68,6 +69,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const mandate = await loadMandate(id);
   const comparison = await buildComparison(id);
   const revisions = await revisionsFor(id);
+  const slot = await slotState();
+  const outreachTurn = await mayStartOutreach(id);
 
   const { open, answered } = await pendingQuestions(id);
   // Same source as the list page, so the two views can never disagree about
@@ -236,6 +239,21 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
               </span>
             )
           )}
+          {!project.pausedAt && !project.archivedAt && !outreachTurn.may && (
+            <span
+              className="muted"
+              style={{ fontSize: 12.5, color: "var(--warn)" }}
+              dir="rtl"
+              title="פרויקט אחד שולח פניות קרות בכל פעם, והתור מתחלף לכל היותר פעם ביום. תשובות לספקים אף פעם לא ממתינות."
+            >
+              שליחה: {outreachTurn.reasonHe}
+            </span>
+          )}
+          {!project.pausedAt && !project.archivedAt && outreachTurn.may && slot.holderId === id && (
+            <span className="muted" style={{ fontSize: 12.5, color: "var(--ok)" }} dir="rtl">
+              שולח עכשיו · {slot.sentToday}/{slot.maxPerDay} פניות היום
+            </span>
+          )}
           {takenOverCount > 0 && (
             <span className="muted" style={{ fontSize: 12.5 }} dir="rtl">
               {takenOverCount} שיחות שלקחת לעצמך - הפרויקט עצמו נשאר{" "}
@@ -384,6 +402,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             </h2>
           </summary>
         <Guide k="campaign" />
+        <Guide k="outreachSlot" />
         <Campaign
           projectId={project.id}
           pending={campaign.pending.map((r) => ({

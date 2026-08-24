@@ -60,6 +60,7 @@ export default async function SettingsPage() {
         <SenderIdentity current={appSettings} />
         <Guide k="senderIdentity" />
         <Guide k="notifications" />
+        <Guide k="outreachSlot" />
       </section>
 
       {/* ── Connections ─────────────────────────────────────────────────── */}

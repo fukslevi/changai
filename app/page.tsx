@@ -2,6 +2,7 @@ import Link from "next/link";
 import { desc } from "drizzle-orm";
 import { db, projects } from "@/lib/db";
 import { lastCycleAt } from "@/lib/settings";
+import { slotState } from "@/lib/outreach/slot";
 import {
   ACTIVITY_COLOUR,
   ACTIVITY_HINT,
@@ -15,6 +16,7 @@ export default async function ProjectsPage() {
   const rows = await db.select().from(projects).orderBy(desc(projects.createdAt));
   const statuses = await projectStatuses(rows);
   const cycle = await lastCycleAt();
+  const slot = await slotState();
 
   /*
    * The archive is a separate list, folded shut.
@@ -48,6 +50,20 @@ export default async function ProjectsPage() {
               ? `המחזור האוטומטי רץ לאחרונה ${when(cycle)}`
               : "המחזור האוטומטי עוד לא רץ"}
           </div>
+          {/*
+            Who is sending, and who is next.
+
+            Without this line a queued project looks broken: it has approved
+            suppliers, autonomy is on, and nothing goes out. The reason is
+            deliberate and belongs where the waiting is visible.
+          */}
+          <div
+            className="muted"
+            style={{ fontSize: 12.5, marginTop: 2, color: "var(--accent)" }}
+            dir="rtl"
+          >
+            {slot.summaryHe}
+          </div>
         </div>
         <Link href="/projects/new">
           <button>New project</button>
@@ -76,6 +92,16 @@ export default async function ProjectsPage() {
                     {p.quantityTiers.length > 0 && ` · ${p.quantityTiers.join(" / ")}`}
                     {p.sourceRfqFile && ` · ${p.sourceRfqFile}`}
                   </div>
+                  {slot.queue.find((q) => q.id === p.id) && (
+                    <div
+                      className="muted"
+                      style={{ marginTop: 3, fontSize: 12.5, color: "var(--warn)" }}
+                      dir="rtl"
+                    >
+                      בתור לשליחה · מקום {slot.queue.find((q) => q.id === p.id)?.position}
+                      {slot.grantedToday ? " · מתחיל מחר" : ""}
+                    </div>
+                  )}
                   {statuses.get(p.id)?.nextAction && (
                     <div
                       className="muted"

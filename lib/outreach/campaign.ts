@@ -12,6 +12,7 @@ import { db, projects, supplierLeads } from "../db";
 import { MAX_DISCOVERY_RUNS, reenrichMissing, runDiscovery, TARGET_LEADS } from "../discovery/run";
 import { approveAllAbove } from "../actions/discovery";
 import { campaignStatus, prepareCampaign, sendNext } from "./batch";
+import { claimSlot, mayStartOutreach, releaseSlot } from "./slot";
 
 /**
  * Enough to make progress every couple of hours, few enough that a mistake is
@@ -109,8 +110,32 @@ export async function runCampaign(
 
   const status = await campaignStatus(projectId);
   if (status.pending.length === 0) {
+    /*
+     * Nothing left to write to, so the slot goes back. Releasing here rather
+     * than at the end of the send loop means a project that was already
+     * finished before this change - or that had its last recipient rejected -
+     * still gives the slot up rather than holding it forever.
+     */
+    await releaseSlot(projectId);
     return { sent: [], failed: [], remaining: 0, skipped: null };
   }
+
+  /*
+   * The pacing gate. Everything above this line is preparation - searching,
+   * enriching, approving - and none of it writes to anybody, so it runs whether
+   * or not this project's turn has come. Only the sending waits.
+   */
+  const slot = await mayStartOutreach(projectId);
+  if (!slot.may) {
+    return {
+      sent: [],
+      failed: [],
+      remaining: status.pending.length,
+      skipped: slot.reasonHe,
+    };
+  }
+
+  await claimSlot(projectId);
 
   // Fails loudly here rather than half way through a list: a missing walk-away
   // or an unset mailbox should stop the run, not produce three sends and a
@@ -119,7 +144,9 @@ export async function runCampaign(
 
   const run: CampaignRun = { sent: [], failed: [], remaining: status.pending.length, skipped: null };
 
-  for (let i = 0; i < MAX_PER_RUN; i++) {
+  const allowedNow = Math.min(MAX_PER_RUN, slot.remaining);
+
+  for (let i = 0; i < allowedNow; i++) {
     if (Date.now() > deadline) break;
 
     const outcome = await sendNext(projectId, prepared);
@@ -129,8 +156,11 @@ export async function runCampaign(
     else run.failed.push({ company: outcome.recipient.companyName, error: outcome.error ?? "" });
 
     run.remaining = outcome.remaining;
-    if (outcome.remaining === 0) break;
-    if (i < MAX_PER_RUN - 1) await new Promise((r) => setTimeout(r, pauseMs()));
+    if (outcome.remaining === 0) {
+      await releaseSlot(projectId);
+      break;
+    }
+    if (i < allowedNow - 1) await new Promise((r) => setTimeout(r, pauseMs()));
   }
 
   return run;

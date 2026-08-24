@@ -92,6 +92,25 @@ export function SenderIdentity({ current }: { current: AppSettings }) {
         </p>
       </div>
 
+      <div>
+        <label htmlFor="maxColdPerDay">פניות קרות ליום</label>
+        <input
+          id="maxColdPerDay"
+          name="maxColdPerDay"
+          type="number"
+          min={1}
+          max={200}
+          dir="ltr"
+          defaultValue={current.maxColdPerDay}
+          required
+        />
+        <p className="hint">
+          פרויקט אחד שולח פניות קרות בכל פעם, והתור מתחלף לכל היותר פעם ביום - כך שזה גם התקרה
+          היומית הכוללת. נספרות פניות ראשונות ותזכורות; תשובות לספקים לא נספרות ואף פעם לא
+          ממתינות בתור, כי מענה למי שכתב לנו הוא הדואר הבטוח ביותר שיש.
+        </p>
+      </div>
+
       {state.error && <p className="error">{state.error}</p>}
       {state.ok && <p style={{ color: "var(--ok)", fontSize: 13 }}>{state.ok}</p>}
 

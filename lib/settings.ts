@@ -12,6 +12,8 @@ export interface AppSettings {
    * lost.
    */
   notifyEmail: string;
+  /** Most cold emails one project may send in a day while it holds the slot. */
+  maxColdPerDay: number;
 }
 
 /**
@@ -88,6 +90,7 @@ export async function getSettings(): Promise<AppSettings> {
     sourcingMailbox: row?.sourcingMailbox || process.env.SOURCING_MAILBOX || "",
     companyName: row?.companyName || "SoSimple",
     notifyEmail: row?.notifyEmail || "ori@sosimple.co.il",
+    maxColdPerDay: row?.maxColdPerDay ?? 30,
   };
 }
 

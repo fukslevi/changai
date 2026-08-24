@@ -12,6 +12,11 @@ const SettingsInput = z.object({
   sourcingMailbox: z.email("כתובת מייל לא תקינה"),
   companyName: z.string().trim().min(1, "שם החברה חובה"),
   notifyEmail: z.email("כתובת מייל לא תקינה"),
+  maxColdPerDay: z.coerce
+    .number()
+    .int()
+    .min(1, "לפחות פנייה אחת ביום")
+    .max(200, "מעל 200 ביום זו כמות שתשרוף את התיבה"),
 });
 
 export async function updateSettings(
@@ -24,6 +29,7 @@ export async function updateSettings(
     sourcingMailbox: formData.get("sourcingMailbox"),
     companyName: formData.get("companyName"),
     notifyEmail: formData.get("notifyEmail"),
+    maxColdPerDay: formData.get("maxColdPerDay"),
   });
 
   if (!parsed.success) {

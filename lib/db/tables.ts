@@ -133,6 +133,21 @@ export const projects = pgTable("projects", {
    */
   searchAngles: jsonb("search_angles").$type<{ query: string; reason: string }[]>(),
   /**
+   * When this project was granted the outreach slot.
+   *
+   * One project may send cold email at a time, and the slot changes hands at
+   * most once a day. Both halves are needed: one-at-a-time alone lets a project
+   * that finishes by ten in the morning hand over to another that sends thirty
+   * more the same afternoon, and one-a-day alone lets a slow project still be
+   * sending when the next one starts. Together they make "one project a day"
+   * mean at most one project's worth of cold email in any day.
+   *
+   * Null means the project has never sent and is waiting its turn.
+   */
+  outreachStartedAt: timestamp("outreach_started_at", { withTimezone: true }),
+  /** Set when every approved supplier has been written to. Frees the slot. */
+  outreachCompletedAt: timestamp("outreach_completed_at", { withTimezone: true }),
+  /**
    * Set to stop the project entirely.
    *
    * Nothing is sent, read or chased while it is set - the whole project stands
@@ -204,6 +219,14 @@ export const settings = pgTable("settings", {
   lastCycleAt: timestamp("last_cycle_at", { withTimezone: true }),
   /** Where notifications go. Separate from the sourcing mailbox on purpose. */
   notifyEmail: text("notify_email"),
+  /**
+   * The most cold emails one project may send in a day while it holds the slot.
+   *
+   * Not a budget shared across projects - only one project sends at a time, so
+   * this is simply how much of its shortlist it gets through before tomorrow.
+   * It is what makes the daily slot mean a number rather than an intention.
+   */
+  maxColdPerDay: integer("max_cold_per_day").notNull().default(30),
 
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
