@@ -184,8 +184,9 @@ ${summary}${table}${refusals}
 /**
  * Send whatever has not been sent, for every live project.
  *
- * Paused projects are skipped along with everything else about them - a project
- * that is switched off should not be able to email you.
+ * Paused and archived projects are skipped along with everything else about
+ * them - a project that is switched off should not be able to email you, and
+ * one you have filed away least of all.
  */
 export async function dispatchNotifications(
   options: { send?: boolean } = {},
@@ -194,7 +195,9 @@ export async function dispatchNotifications(
   const to = await notificationRecipient();
   if (!to) return [];
 
-  const live = (await db.select().from(projects)).filter((project) => !project.pausedAt);
+  const live = (await db.select().from(projects)).filter(
+    (project) => !project.pausedAt && !project.archivedAt,
+  );
   if (live.length === 0) return [];
 
   const statuses = await projectStatuses(live);

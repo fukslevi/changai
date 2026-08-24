@@ -176,11 +176,18 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         </div>
         <div className="stack" style={{ gap: 4, alignItems: "flex-end" }}>
           <div className="row" style={{ gap: 6 }}>
-          {project.pausedAt && (
-            <span className="tag" style={{ color: "var(--bad)" }}>
-              <span className="status-dot" style={{ background: "var(--bad)" }} />
-              כבוי
+          {project.archivedAt ? (
+            <span className="tag" style={{ color: "var(--muted)" }}>
+              <span className="status-dot" style={{ background: "var(--muted)" }} />
+              בארכיון
             </span>
+          ) : (
+            project.pausedAt && (
+              <span className="tag" style={{ color: "var(--bad)" }}>
+                <span className="status-dot" style={{ background: "var(--bad)" }} />
+                כבוי
+              </span>
+            )
           )}
           {status && (
             <>
@@ -211,7 +218,11 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             </>
           )}
           </div>
-          {project.pausedAt ? (
+          {project.archivedAt ? (
+            <span className="muted" style={{ fontSize: 12.5 }} dir="rtl">
+              בארכיון וכבוי - שום דבר לא רץ. שחזור מחזיר אותו לרשימה, עדיין כבוי
+            </span>
+          ) : project.pausedAt ? (
             <span className="muted" style={{ fontSize: 12.5 }} dir="rtl">
               כבוי - לא נשלחות פניות, לא נקראות תשובות ולא נשלחות תזכורות
             </span>
@@ -228,7 +239,11 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
               {status?.autonomous ? "אוטונומי" : "מלווה"} לכל השאר
             </span>
           )}
-          <Pause projectId={project.id} pausedAt={project.pausedAt} />
+          <Pause
+            projectId={project.id}
+            pausedAt={project.pausedAt}
+            archivedAt={project.archivedAt}
+          />
         </div>
       </div>
 

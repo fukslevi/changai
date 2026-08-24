@@ -70,6 +70,14 @@ export async function GET(request: Request) {
   for (const project of queue) {
     // A project that is switched off is switched off: nothing read, nothing
     // sent, nothing chased. Anything less makes the switch a decoration.
+    // Archiving always switches off, so this covers both - but they are
+    // reported separately, because "I filed it away" and "I stopped it for
+    // now" are different answers to "why is nothing happening".
+    if (project.archivedAt) {
+      summary.push({ project: project.name, skipped: "archived" });
+      continue;
+    }
+
     if (project.pausedAt) {
       summary.push({ project: project.name, skipped: "paused" });
       continue;

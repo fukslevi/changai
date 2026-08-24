@@ -22,7 +22,8 @@ export type Activity =
   | "draft"
   | "done"
   | "stopped"
-  | "paused";
+  | "paused"
+  | "archived";
 
 export interface ProjectStatus {
   id: string;
@@ -46,6 +47,7 @@ export const ACTIVITY_LABEL: Record<Activity, string> = {
   done: "הסתיים",
   stopped: "עצר",
   paused: "כבוי",
+  archived: "בארכיון",
 };
 
 /**
@@ -62,6 +64,7 @@ export const ACTIVITY_COLOUR: Record<Activity, string> = {
   done: "var(--ok)",
   stopped: "var(--bad)",
   paused: "var(--muted)",
+  archived: "var(--muted)",
 };
 
 export const ACTIVITY_DOT: Record<Activity, string> = ACTIVITY_COLOUR;
@@ -74,6 +77,7 @@ export const ACTIVITY_HINT: Record<Activity, string> = {
   done: "כולם קיבלו פנייה, כל מי שהתכוון לענות ענה, ההצעות בטבלה",
   stopped: "אין שיחה חיה ואין מה לשלוח - לא ימשיך מעצמו",
   paused: "כיבית את הפרויקט - שום דבר לא רץ עד שתדליק אותו",
+  archived: "בארכיון וכבוי. אפשר לשחזר בכל רגע - שום דבר לא נמחק",
 };
 
 /**
@@ -129,16 +133,18 @@ export async function projectStatuses(
      * work that is not happening - "11 conversations open" on something that
      * has not sent an email since March.
      */
-    if (project.pausedAt) {
+    if (project.pausedAt || project.archivedAt) {
       out.set(project.id, {
         id: project.id,
         autonomous: project.autonomyTier >= 3,
-        activity: "paused",
+        activity: project.archivedAt ? "archived" : "paused",
         liveThreads: 0,
         openQuestions: 0,
         waitingToSend: 0,
         lastActivity: null,
-        nextAction: "כבוי - לא נשלח ולא נקרא כלום עד שתדליק",
+        nextAction: project.archivedAt
+          ? "בארכיון - שום דבר לא רץ. שחזור מחזיר אותו לרשימה, עדיין כבוי"
+          : "כבוי - לא נשלח ולא נקרא כלום עד שתדליק",
       });
       continue;
     }

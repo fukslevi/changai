@@ -16,6 +16,16 @@ export default async function ProjectsPage() {
   const statuses = await projectStatuses(rows);
   const cycle = await lastCycleAt();
 
+  /*
+   * The archive is a separate list, folded shut.
+   *
+   * Hiding it entirely would make it a delete with extra steps, and mixing it
+   * in would defeat the point of filing something away. A count on a closed
+   * fold says it is still there without spending a line on each.
+   */
+  const live = rows.filter((p) => !p.archivedAt);
+  const archived = rows.filter((p) => p.archivedAt);
+
   const when = (date: Date | null) =>
     date
       ? new Date(date).toLocaleString("he-IL", {
@@ -44,13 +54,17 @@ export default async function ProjectsPage() {
         </Link>
       </div>
 
-      {rows.length === 0 ? (
+      {live.length === 0 && archived.length === 0 ? (
         <p className="empty">
           No projects yet. Create one to upload an RFQ and start sourcing.
         </p>
+      ) : live.length === 0 ? (
+        <p className="empty" dir="rtl">
+          כל הפרויקטים בארכיון. פתח את הארכיון למטה כדי לשחזר אחד.
+        </p>
       ) : (
         <ul className="list">
-          {rows.map((p) => (
+          {live.map((p) => (
             <li key={p.id}>
               <div className="spread">
                 <div>
@@ -115,6 +129,34 @@ export default async function ProjectsPage() {
             </li>
           ))}
         </ul>
+      )}
+
+      {archived.length > 0 && (
+        <details>
+          <summary className="muted" style={{ cursor: "pointer", fontSize: 13 }} dir="rtl">
+            ארכיון ({archived.length}) - כבויים, שמורים במלואם, ניתנים לשחזור
+          </summary>
+          <ul className="list" style={{ marginTop: 8 }}>
+            {archived.map((p) => (
+              <li key={p.id}>
+                <div className="spread">
+                  <div>
+                    <Link href={`/projects/${p.id}`}>
+                      <strong className="muted">{p.name}</strong>
+                    </Link>
+                    <div className="muted" style={{ fontSize: 12.5 }} dir="rtl">
+                      הועבר לארכיון {when(p.archivedAt)}
+                    </div>
+                  </div>
+                  <span className="tag" style={{ color: "var(--muted)" }}>
+                    <span className="status-dot" style={{ background: "var(--muted)" }} />
+                    בארכיון
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
     </main>
   );

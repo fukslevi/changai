@@ -45,8 +45,9 @@ async function nextStep(projectId: string): Promise<Step | null> {
   const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
   if (!project) return null;
   // A project that is switched off does not quietly set itself up when someone
-  // opens the page to look at it.
-  if (project.pausedAt) return null;
+  // opens the page to look at it. Looking is the main reason to open an
+  // archived one, so this matters most there.
+  if (project.pausedAt || project.archivedAt) return null;
 
   const parsed = await db
     .select({ id: items.id })

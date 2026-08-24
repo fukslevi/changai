@@ -142,6 +142,16 @@ export const projects = pgTable("projects", {
    */
   pausedAt: timestamp("paused_at", { withTimezone: true }),
   /**
+   * Set to file the project away.
+   *
+   * Archiving always switches the project off as well - a project you have
+   * finished with should not keep writing to factories from behind a filter,
+   * and the two states agreeing is what makes the archive safe to use. It is
+   * not a delete: everything is kept, and restoring puts it back exactly as it
+   * was, still switched off until someone decides otherwise.
+   */
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  /**
    * When the scheduled cycle last got to this project.
    *
    * The cycle has a deadline and processes projects in order, so with a fixed
