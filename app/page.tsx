@@ -4,6 +4,8 @@ import { db, projects } from "@/lib/db";
 import { lastCycleAt } from "@/lib/settings";
 import { slotState } from "@/lib/outreach/slot";
 import { nextActionsFor, nextCycleAt, nextSupplierWindow } from "@/lib/next-action";
+import { projectStats } from "@/lib/project-stats";
+import { Stats } from "./Stats";
 import { withinSupplierHours } from "@/lib/inbox/autopilot";
 import {
   ACTIVITY_COLOUR,
@@ -38,6 +40,7 @@ export default async function ProjectsPage() {
       : null;
 
   const statuses = await projectStatuses(rows);
+  const stats = await projectStats(rows.map((r) => r.id));
   const cycle = await lastCycleAt();
   const slot = await slotState();
 
@@ -148,6 +151,7 @@ export default async function ProjectsPage() {
                       {slot.grantedToday ? " · מתחיל מחר" : ""}
                     </div>
                   )}
+                  {stats.get(p.id) && <Stats stats={stats.get(p.id)!} />}
                   {upcoming.get(p.id) && (
                     <div className="muted" style={{ marginTop: 3, fontSize: 12.5 }} dir="rtl">
                       {upcoming.get(p.id)!.labelHe}

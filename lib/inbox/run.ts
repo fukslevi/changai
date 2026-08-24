@@ -9,6 +9,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import {
   db,
   files,
+  items,
   messages,
   outreach,
   projects,
@@ -98,6 +99,18 @@ export async function pollInbox(projectId: string): Promise<InboxResult> {
     .from(requirements)
     .where(eq(requirements.projectId, projectId));
   const requirementTexts = projectRequirements.map((r) => r.text);
+
+  // The RFQ's own product names, so the extractor can say which of them each
+  // quoted line is for. Without them a two-product RFQ has no way to keep the
+  // targets apart.
+  const itemNames = (
+    await db
+      .select({ name: items.name, kind: items.kind })
+      .from(items)
+      .where(eq(items.projectId, projectId))
+  )
+    .filter((i) => i.kind === "priced_variant")
+    .map((i) => i.name);
 
   const strayThreads = new Map<string, { threadId: string; supplierId: string }>();
   for (const stray of strays) {
@@ -256,6 +269,7 @@ export async function pollInbox(projectId: string): Promise<InboxResult> {
               bodyText: message.bodyText,
             },
             blocks as never,
+            itemNames,
           );
 
           if (quote.has_pricing || quote.rejects_target_price || quote.deviations.length > 0) {

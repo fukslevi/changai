@@ -608,7 +608,16 @@ export const quoteReadings = pgTable(
     incoterm: text("incoterm"),
     incotermPlace: text("incoterm_place"),
     lines: jsonb("lines")
-      .$type<{ item_name: string; qty: number | null; unit_price: number | null; spec_note: string | null }[]>()
+      .$type<
+        {
+          item_name: string;
+          qty: number | null;
+          unit_price: number | null;
+          spec_note: string | null;
+          /** Which RFQ product this prices, by our name. Null for accessories. */
+          matches_rfq_item?: string | null;
+        }[]
+      >()
       .notNull()
       .default([]),
 

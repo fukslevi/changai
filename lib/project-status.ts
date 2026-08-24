@@ -214,8 +214,28 @@ export async function projectStatuses(
     ).length;
     const chasedOut = sent.filter((o) => o.status === "failed").length;
 
+    /*
+     * Waiting to send means approved, addressed, and not written to yet.
+     *
+     * The last clause was missing, and a lead whose status stayed "approved"
+     * after its email went out was counted as still waiting. Two of those on
+     * Telescopic Ladder produced a permanent "sending first contact to 2
+     * suppliers in the coming cycles" on a project with nothing left to send -
+     * a promise the page repeated every reload and the cycle never kept.
+     *
+     * Counted the same way the campaign counts it: an outreach row means the
+     * supplier has been contacted, whatever the lead row says.
+     */
+    const contacted = new Set(
+      outreachRows.filter((o) => o.projectId === project.id).map((o) => o.supplierId),
+    );
+
     const approved = leadRows.filter(
-      (l) => l.projectId === project.id && l.status === "approved" && l.email,
+      (l) =>
+        l.projectId === project.id &&
+        l.status === "approved" &&
+        l.email &&
+        (!l.supplierId || !contacted.has(l.supplierId)),
     ).length;
     const autonomous = project.autonomyTier >= 3;
 

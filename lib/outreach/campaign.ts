@@ -121,6 +121,24 @@ export async function runCampaign(
   }
 
   /*
+   * A project that finished and has since found more suppliers goes back in
+   * the queue rather than staying finished forever.
+   *
+   * Discovery keeps running after the first round of outreach, so new approved
+   * leads appear on a project that has already released the slot. Without this
+   * they would sit as recipients nobody was allowed to write to: the gate
+   * answers "everyone has already been contacted", which was true when it was
+   * stamped and is not any more. Re-queuing means they are paced like any
+   * other cold batch, which is the right treatment - they are exactly that.
+   */
+  if (project.outreachCompletedAt) {
+    await db
+      .update(projects)
+      .set({ outreachStartedAt: null, outreachCompletedAt: null })
+      .where(eq(projects.id, projectId));
+  }
+
+  /*
    * The pacing gate. Everything above this line is preparation - searching,
    * enriching, approving - and none of it writes to anybody, so it runs whether
    * or not this project's turn has come. Only the sending waits.

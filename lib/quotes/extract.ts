@@ -27,8 +27,28 @@ export const ExtractedQuote = z.object({
   lines: z
     .array(
       z.object({
-        /** Their wording, not ours - matching to our items happens later. */
+        /** Their wording, kept verbatim. */
         item_name: z.string(),
+        /**
+         * Which of our RFQ products this line prices, by our exact name.
+         *
+         * The comment here used to say matching happened later, and it never
+         * did: the comparison keyed targets by quantity alone, so on an RFQ
+         * with two products every line was measured against whichever target
+         * was read last. An accessory priced at $0.54 came out 93% under
+         * budget against a $8.05 basket.
+         *
+         * It cannot be done later by string matching either. "Multi-purpose
+         * (A-frame) telescopic ladder 1.9m+1.9m" is our "A - 12.5FT Aluminum
+         * material, telescopic A frame", and no amount of substring logic gets
+         * there. It is a judgement about what the thing is, made here where
+         * the specification and their message are both in view.
+         *
+         * Null when the line is an accessory, a sample, a tooling charge or
+         * anything else we did not ask to be priced. Null is the right answer
+         * far more often than a guess is.
+         */
+        matches_rfq_item: z.string().nullable().default(null),
         /** Null when the price is flat across volumes. */
         qty: z.number().int().positive().nullable(),
         unit_price: z.number().nullable(),
@@ -101,6 +121,17 @@ words in price_objection. Still fill in every number they did give: a supplier
 who declines has usually told you where the real floor is, and that is worth
 more than a quote from someone who agreed to everything.
 
+For every priced line, set matches_rfq_item to the exact name of the product of
+ours it is quoting, from the list given. Match on what the thing is, not on
+wording: a supplier writing "Multi-purpose (A-frame) telescopic ladder
+1.9m+1.9m, 6+6 steps" is quoting an item we called "A - 12.5FT Aluminum
+material, telescopic A frame".
+
+Set it to null for anything we did not ask to be priced - accessories, spare
+parts, carry bags, samples, tooling. A wrong match is worse than none: it puts
+the price of a $1.50 wheel next to the target for a $35 ladder and reports the
+supplier as 96% under budget.
+
 Write summary_he in Hebrew, one factual sentence. Short hyphen (-), never long.`;
 
 export async function extractQuote(
@@ -108,12 +139,20 @@ export async function extractQuote(
   requirements: string[],
   message: { fromAddress: string; subject: string; bodyText: string },
   attachments: Anthropic.Messages.ContentBlockParam[] = [],
+  itemNames: string[] = [],
 ): Promise<{ quote: ExtractedQuote; usage: unknown }> {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY is not set");
 
   const brief = [
     `PRODUCT: ${productName}`,
     "",
+    ...(itemNames.length > 0
+      ? [
+          "OUR PRODUCTS (use these exact names in matches_rfq_item):",
+          ...itemNames.map((n) => `- ${n}`),
+          "",
+        ]
+      : []),
     "WHAT WE SPECIFIED:",
     ...requirements.slice(0, 40).map((r) => `- ${r}`),
     "",

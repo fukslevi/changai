@@ -89,20 +89,105 @@ export async function buildComparison(projectId: string): Promise<Comparison> {
   ]);
 
   /*
-   * The target price per quantity, straight from the RFQ. It is the only
-   * benchmark: it already carries the buyer's own analysis, so deriving a
-   * second one from retail price and freight added arithmetic without adding
-   * information.
+   * The target price per product per quantity, straight from the RFQ. It is
+   * the only benchmark: it already carries the buyer's own analysis, so
+   * deriving a second one from retail price and freight added arithmetic
+   * without adding information.
+   *
+   * Keyed by product as well as quantity, which it was not, and the difference
+   * is not cosmetic. The bike basket RFQ asks for two products - a folding
+   * basket at $4.20-5.00 and a fixed one at $7.45-8.05 - and a map keyed on
+   * quantity alone held one of them, whichever was read last. Every line was
+   * then measured against the wrong product's price. Peitai's $0.54 triangle
+   * bag, an accessory with no target at all, was compared to the $8.05 basket
+   * and reported as 93% under budget: the best offer on the board, and
+   * meaningless.
    */
-  const targets = priced
-    .filter((item) => item.kind === "priced_variant")
-    .flatMap((item) => item.targetPrices)
-    .filter((p) => p.qty !== null && p.unit_price !== null);
+  const variants = priced.filter((item) => item.kind === "priced_variant");
 
+  const targetsByItem = new Map<string, Map<number, number>>();
+  for (const item of variants) {
+    const byQty = new Map<number, number>();
+    for (const point of item.targetPrices) {
+      if (point.qty === null || point.unit_price === null) continue;
+      byQty.set(point.qty, point.unit_price);
+    }
+    if (byQty.size > 0) targetsByItem.set(item.name, byQty);
+  }
+
+  /*
+   * Kept for the header, which states the target range for the project. With
+   * several products it shows the cheapest at each tier, which is honest for a
+   * summary line and is never used to judge an individual quote.
+   */
   const targetByQty =
-    targets.length > 0
-      ? new Map(targets.map((p) => [p.qty as number, p.unit_price as number]))
+    targetsByItem.size > 0
+      ? new Map(
+          [...targetsByItem.values()]
+            .flatMap((byQty) => [...byQty])
+            .reduce((acc, [qty, price]) => {
+              const held = acc.get(qty);
+              if (held === undefined || price < held) acc.set(qty, price);
+              return acc;
+            }, new Map<number, number>()),
+        )
       : null;
+
+  /**
+   * Which RFQ product a quoted line is for.
+   *
+   * Suppliers restate the name with their own additions - "Folding Rear Bike
+   * Basket (incl. all installation accessories)" - so the RFQ name sits inside
+   * theirs rather than equalling it. The longest match wins, which is what
+   * makes "Folding Rear Bike Basket" beat "Rear Bike Basket" on a line that
+   * contains both.
+   *
+   * No match means no target, and no gap. An accessory the RFQ never asked to
+   * be priced should show a price and an empty gap column rather than a number
+   * measured against something else.
+   */
+  const normalise = (value: string) => value.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+
+  function targetFor(
+    lineName: string,
+    qty: number | null,
+    declaredItem?: string | null,
+  ): number | null {
+    if (qty === null || targetsByItem.size === 0) return null;
+
+    /*
+     * The extractor's own answer wins when it gave one. It made the judgement
+     * with the specification and the supplier's message both in view, which is
+     * the only place the ladder case can be decided: "Multi-purpose (A-frame)
+     * telescopic ladder 1.9m+1.9m" is our "A - 12.5FT Aluminum material,
+     * telescopic A frame", and no string comparison reaches that.
+     *
+     * The matching below stays for readings taken before the extractor was
+     * asked the question.
+     */
+    if (declaredItem) {
+      const exact = targetsByItem.get(declaredItem);
+      if (exact) return exact.get(qty) ?? null;
+    }
+
+    const haystack = normalise(lineName);
+    let bestName: string | null = null;
+
+    for (const itemName of targetsByItem.keys()) {
+      const needle = normalise(itemName);
+      if (!needle || !haystack.includes(needle)) continue;
+      if (bestName === null || needle.length > normalise(bestName).length) bestName = itemName;
+    }
+
+    if (bestName === null) {
+      // A single-product RFQ has nothing to confuse, so an unrecognised name is
+      // safely that product. With several, guessing is how the bug came back.
+      if (targetsByItem.size !== 1) return null;
+      bestName = [...targetsByItem.keys()][0]!;
+    }
+
+    return targetsByItem.get(bestName)?.get(qty) ?? null;
+  }
 
   /*
    * One row per supplier - their most recent reading. A supplier who wrote four
@@ -130,8 +215,7 @@ export async function buildComparison(projectId: string): Promise<Comparison> {
 
   for (const reading of latest.values()) {
     const lines: ComparisonLine[] = reading.lines.map((line) => {
-      const target =
-        line.qty !== null && targetByQty ? (targetByQty.get(line.qty) ?? null) : null;
+      const target = targetFor(line.item_name, line.qty, line.matches_rfq_item);
 
       const verdict =
         target !== null && line.unit_price !== null
