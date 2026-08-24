@@ -27,6 +27,8 @@ export interface SilentThread {
   /** Whether they have ever written back at all. */
   everReplied: boolean;
   due: boolean;
+  /** Days until the next chase is due. Zero or less once it is. */
+  dueInDays: number;
   /** Set when the thread has run out of chases. */
   exhausted: boolean;
 }
@@ -130,6 +132,7 @@ export async function silentThreads(projectId: string): Promise<SilentThread[]> 
       chasesSent: entry.chases,
       everReplied: entry.inbound > 0,
       due: entry.chases < MAX_CHASES && daysSilent >= threshold,
+      dueInDays: threshold - daysSilent,
       exhausted: entry.chases >= MAX_CHASES,
     });
   }

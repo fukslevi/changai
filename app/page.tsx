@@ -3,6 +3,8 @@ import { desc } from "drizzle-orm";
 import { db, projects } from "@/lib/db";
 import { lastCycleAt } from "@/lib/settings";
 import { slotState } from "@/lib/outreach/slot";
+import { nextActionsFor, nextCycleAt, nextSupplierWindow } from "@/lib/next-action";
+import { withinSupplierHours } from "@/lib/inbox/autopilot";
 import {
   ACTIVITY_COLOUR,
   ACTIVITY_HINT,
@@ -14,9 +16,6 @@ export const dynamic = "force-dynamic";
 
 export default async function ProjectsPage() {
   const rows = await db.select().from(projects).orderBy(desc(projects.createdAt));
-  const statuses = await projectStatuses(rows);
-  const cycle = await lastCycleAt();
-  const slot = await slotState();
 
   /*
    * The archive is a separate list, folded shut.
@@ -38,6 +37,37 @@ export default async function ProjectsPage() {
         })
       : null;
 
+  const statuses = await projectStatuses(rows);
+  const cycle = await lastCycleAt();
+  const slot = await slotState();
+
+  const now = new Date();
+  const cycleNext = nextCycleAt(now);
+  const replyWindow = nextSupplierWindow(now);
+  const replyWindowOpen = withinSupplierHours(now);
+
+  /*
+   * The soonest thing each project will do, so a row says whether it is
+   * working or waiting without opening it. Silence and a stall look identical
+   * from a list, and only one of them needs attention.
+   */
+  const upcoming = new Map(
+    await Promise.all(
+      live.map(async (p) => [p.id, (await nextActionsFor(p.id, now))[0] ?? null] as const),
+    ),
+  );
+
+  const soon = (date: Date) => {
+    const minutes = Math.round((date.getTime() - now.getTime()) / 60_000);
+    if (minutes <= 1) return "עכשיו";
+    if (minutes < 60) return `בעוד ${minutes} דקות`;
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return `בעוד כ-${hours} שעות`;
+    return when(date) ?? "";
+  };
+
+
+
   return (
     <main className="stack">
       <div className="spread">
@@ -57,6 +87,22 @@ export default async function ProjectsPage() {
             suppliers, autonomy is on, and nothing goes out. The reason is
             deliberate and belongs where the waiting is visible.
           */}
+          {/*
+            When it next runs, not only when it last ran. A system that shows
+            only the past leaves the reader to work out whether silence means
+            waiting or broken, and those look the same.
+          */}
+          <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }} dir="rtl">
+            המחזור הבא {soon(cycleNext)}
+            <span style={{ opacity: 0.7 }}> (בערך - GitHub נוטה לאחר ב-20 דקות)</span>
+          </div>
+          <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }} dir="rtl">
+            {replyWindowOpen
+              ? "חלון התשובות לספקים פתוח עכשיו (9:00-18:00 בסין)"
+              : replyWindow
+                ? `תשובות לספקים ייצאו ${soon(replyWindow)} - כרגע לילה בסין`
+                : "חלון התשובות סגור"}
+          </div>
           <div
             className="muted"
             style={{ fontSize: 12.5, marginTop: 2, color: "var(--accent)" }}
@@ -100,6 +146,17 @@ export default async function ProjectsPage() {
                     >
                       בתור לשליחה · מקום {slot.queue.find((q) => q.id === p.id)?.position}
                       {slot.grantedToday ? " · מתחיל מחר" : ""}
+                    </div>
+                  )}
+                  {upcoming.get(p.id) && (
+                    <div className="muted" style={{ marginTop: 3, fontSize: 12.5 }} dir="rtl">
+                      {upcoming.get(p.id)!.labelHe}
+                      {upcoming.get(p.id)!.at && (
+                        <strong style={{ color: "var(--accent)" }}>
+                          {" "}
+                          {soon(upcoming.get(p.id)!.at!)}
+                        </strong>
+                      )}
                     </div>
                   )}
                   {statuses.get(p.id)?.nextAction && (

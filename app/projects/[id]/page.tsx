@@ -18,6 +18,8 @@ import { revisionsFor } from "@/lib/pricing/revise";
 import { buildComparison } from "@/lib/quotes/compare";
 import { Autonomy } from "./Autonomy";
 import { Pause } from "./Pause";
+import { NextUp } from "./NextUp";
+import { nextActionsFor } from "@/lib/next-action";
 import { campaignStatus } from "@/lib/outreach/batch";
 import { mayStartOutreach, slotState } from "@/lib/outreach/slot";
 import { projectPricing } from "@/lib/pricing/project";
@@ -71,6 +73,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const revisions = await revisionsFor(id);
   const slot = await slotState();
   const outreachTurn = await mayStartOutreach(id);
+  const now = new Date();
+  const nextUp = await nextActionsFor(id, now);
 
   const { open, answered } = await pendingQuestions(id);
   // Same source as the list page, so the two views can never disagree about
@@ -299,6 +303,18 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         at" rather than "which of eleven panels did I want".
       */}
       <Autostart projectId={project.id} pending={setupPending} />
+
+      {/*
+        Above the table, because it answers the question asked on arrival.
+        "Last reply 7 hours ago" reads as broken; "replying to 3 suppliers in
+        about 6 hours, because it is 2am in China" reads as working.
+      */}
+      <section className="card stack" style={{ gap: 8 }}>
+        <h2 style={{ margin: 0, fontSize: 16 }} dir="rtl">
+          מה קורה עכשיו
+        </h2>
+        <NextUp actions={nextUp} now={now} />
+      </section>
 
       {/*
         The table first.
