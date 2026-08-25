@@ -20,7 +20,7 @@ const ENRICH_CONCURRENCY = 5;
  * and the New York Times both turned up on a bike-basket search. Storing them
  * only makes the operator scroll past thirty rows to reach the five that matter.
  */
-const MIN_SCORE_TO_STORE = 20;
+export const MIN_SCORE_TO_STORE = 20;
 
 /**
  * The score at which a lead is written to without anyone looking.

@@ -6,6 +6,7 @@ import { db, files, items, projects, requirements, rfqValidationIssues, supplier
 import { EditDetails, ParseRfq, UploadRfq } from "./ProjectSettings";
 import { Guide } from "@/app/Guide";
 import { Suppliers } from "./Suppliers";
+import { AddSuppliers } from "./AddSuppliers";
 import { Campaign } from "./Campaign";
 import { Conversations, type SupplierThread } from "./Conversations";
 import { Commercials } from "./Commercials";
@@ -410,6 +411,15 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           4 · ספקים <span className="muted" style={{ fontSize: 14 }}>({leads.length})</span>
         </h2>
         <Guide k="suppliers" />
+
+        <details>
+          <summary>
+            <h2 style={{ display: "inline", fontSize: 16 }}>הוסף ספקים לפי כתובת אתר</h2>
+          </summary>
+          <Guide k="manualSuppliers" />
+          <AddSuppliers projectId={project.id} />
+        </details>
+
         <Suppliers projectId={project.id} leads={leads} />
         <details open={campaign.pending.length > 0}>
           <summary>
