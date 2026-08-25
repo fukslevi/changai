@@ -15,6 +15,7 @@ import { SideNav, type NavSection } from "./SideNav";
 import { Autostart } from "./Autostart";
 import { Comparison } from "./Comparison";
 import { TargetPrice } from "./TargetPrice";
+import { PriceAudit } from "./PriceAudit";
 import { revisionsFor } from "@/lib/pricing/revise";
 import { buildComparison } from "@/lib/quotes/compare";
 import { Autonomy } from "./Autonomy";
@@ -369,6 +370,32 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
               reasonHe: r.reasonHe,
               changedAt: r.changedAt,
             }))}
+          />
+        </details>
+
+        {/*
+          Sits with the target it questions. Everything else in the project
+          measures quotes against the target; this is the one place that
+          measures the target against the quotes.
+        */}
+        <details>
+          <summary>
+            <h2 style={{ display: "inline", fontSize: 16 }}>
+              בדיקת היתכנות{" "}
+              <span className="muted" style={{ fontSize: 13 }}>
+                למה אנחנו לא קרובים?
+              </span>
+            </h2>
+          </summary>
+          <Guide k="priceAudit" />
+          <PriceAudit
+            projectId={project.id}
+            defaults={{
+              retailUsd: projectItems[0]?.targetRetailUsd
+                ? Number(projectItems[0].targetRetailUsd)
+                : null,
+              fbaFeeUsd: projectItems[0]?.fbaFeeUsd ? Number(projectItems[0].fbaFeeUsd) : null,
+            }}
           />
         </details>
       </section>

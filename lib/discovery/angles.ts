@@ -84,6 +84,12 @@ Return 10-14 angles, ordered by how likely each is to reach a real factory.`,
   });
 
   const message = await stream.finalMessage();
-  const parsed = message.parsed_output as z.infer<typeof Angles> | null;
-  return parsed?.angles ?? [];
+  const json = message.content.find((block) => block.type === "text")?.text;
+  if (!json) return [];
+
+  try {
+    return Angles.parse(JSON.parse(json)).angles;
+  } catch {
+    return [];
+  }
 }

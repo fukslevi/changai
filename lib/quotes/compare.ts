@@ -29,6 +29,16 @@ export interface ComparisonLine {
   /** Within the acceptable band. */
   acceptable: boolean | null;
   specNote: string | null;
+  /**
+   * Which RFQ product this line prices, if any.
+   *
+   * Distinct from `target`, which is null both for an accessory and for a real
+   * product quoted at a quantity the RFQ never set a target for. The margin
+   * audit needs to tell those apart: a flat price with no tier is still a real
+   * price for a real product, and dropping it lost Wellmade's $62.68 ladder
+   * from the analysis entirely.
+   */
+  matchedItem: string | null;
 }
 
 export interface SupplierComparison {
@@ -148,6 +158,26 @@ export async function buildComparison(projectId: string): Promise<Comparison> {
    */
   const normalise = (value: string) => value.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
 
+  /** Which of our products a line prices, independent of quantity. */
+  function matchedItemFor(lineName: string, declaredItem?: string | null): string | null {
+    if (targetsByItem.size === 0) return null;
+    if (declaredItem && targetsByItem.has(declaredItem)) return declaredItem;
+
+    const haystack = normalise(lineName);
+    let bestName: string | null = null;
+
+    for (const itemName of targetsByItem.keys()) {
+      const needle = normalise(itemName);
+      if (!needle || !haystack.includes(needle)) continue;
+      if (bestName === null || needle.length > normalise(bestName).length) bestName = itemName;
+    }
+
+    if (bestName === null && targetsByItem.size === 1) {
+      bestName = [...targetsByItem.keys()][0]!;
+    }
+    return bestName;
+  }
+
   function targetFor(
     lineName: string,
     qty: number | null,
@@ -216,6 +246,7 @@ export async function buildComparison(projectId: string): Promise<Comparison> {
   for (const reading of latest.values()) {
     const lines: ComparisonLine[] = reading.lines.map((line) => {
       const target = targetFor(line.item_name, line.qty, line.matches_rfq_item);
+      const matchedItem = matchedItemFor(line.item_name, line.matches_rfq_item);
 
       const verdict =
         target !== null && line.unit_price !== null
@@ -230,6 +261,7 @@ export async function buildComparison(projectId: string): Promise<Comparison> {
         gapPct: verdict?.gapPct ?? null,
         acceptable: verdict?.acceptable ?? null,
         specNote: line.spec_note,
+        matchedItem,
       };
     });
 
