@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { sweepBounces } from "@/lib/inbox/bounces";
 import { dispatchNotifications } from "@/lib/notify/dispatch";
 import { authorised } from "../auth";
 
@@ -22,9 +23,24 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  /*
+   * Bounces are swept here rather than in the main cycle for the same reason
+   * the announcements are: it is cheap, it is global rather than per project,
+   * and it must not be the thing that gets dropped when the cycle overruns. A
+   * dead address that stays in the list is written to again on the next round.
+   */
+  let bounces: unknown = null;
+  try {
+    const sweep = await sweepBounces();
+    bounces = { found: sweep.found.length, cleared: sweep.cleared };
+  } catch (err) {
+    bounces = { error: err instanceof Error ? err.message : String(err) };
+  }
+
   const sent = await dispatchNotifications();
 
   return NextResponse.json({
+    bounces,
     sent: sent.map(({ project, kind, subject, keys }) => ({
       project,
       kind,

@@ -11,6 +11,13 @@
  * The match is by domain rather than by address. LUMI were contacted at
  * lumi@lumi.cn and answered from lumi235@lumi.cn; insisting on the exact
  * mailbox would have kept missing them.
+ *
+ * It searches spam and trash too. Gmail filed a reply from market3@hjleds.com
+ * as spam - a real supplier answering a real RFQ - and the default search scope
+ * excludes both folders, so nothing in the system could see it. A cold enquiry
+ * to a factory produces exactly the reply pattern a spam filter is suspicious
+ * of, so this is not a rare accident, and a supplier who answered and was
+ * ignored is worse than one who never answered at all.
  */
 import { eq } from "drizzle-orm";
 import { db, outreach, suppliers } from "../db";
@@ -72,7 +79,9 @@ export async function findStrayReplies(
   const gmail = gmailClient();
   const list = await gmail.users.messages.list({
     userId: "me",
-    q: `-from:${ourMailbox} newer_than:${days}d`,
+    // `in:anywhere` is what reaches spam and trash; without it Gmail searches
+    // the inbox only, which is the one place a filtered reply is not.
+    q: `in:anywhere -from:${ourMailbox} newer_than:${days}d`,
     maxResults: options.max ?? 80,
   });
 
@@ -95,6 +104,27 @@ export async function findStrayReplies(
     const domain = domainOf(from);
     const match = domain ? byDomain.get(domain) : undefined;
     if (!match) continue;
+
+    /*
+     * Rescue it from spam so the conversation behaves normally from here.
+     *
+     * Leaving the label on means every later message in the thread is filtered
+     * too, and the operator looking at the mailbox by hand never sees the
+     * exchange. Failing to relabel must not lose the message, so the error is
+     * swallowed - having read it matters more than where it sits.
+     */
+    const labels = message.data.labelIds ?? [];
+    if (labels.includes("SPAM") || labels.includes("TRASH")) {
+      try {
+        await gmail.users.messages.modify({
+          userId: "me",
+          id: message.data.id as string,
+          requestBody: { removeLabelIds: ["SPAM", "TRASH"], addLabelIds: ["INBOX"] },
+        });
+      } catch {
+        // Read anyway.
+      }
+    }
 
     strays.push({
       gmailMessageId: message.data.id as string,

@@ -21,7 +21,17 @@
  * answer should not wait because a different product is having its turn.
  */
 import { and, asc, eq, gte, isNotNull, isNull, sql } from "drizzle-orm";
-import { db, messages, projects, settings } from "../db";
+import { db, messages, projects, settings, supplierLeads } from "../db";
+import { AUTO_APPROVE_SCORE, MAX_DISCOVERY_RUNS, TARGET_LEADS } from "../discovery/run";
+
+/**
+ * How long a project may hold up the queue while it is still searching.
+ *
+ * Some products have twelve manufacturers in the world and will never reach
+ * thirty. Waiting forever for a number that is not out there would let one
+ * narrow product block every other project indefinitely.
+ */
+const MAX_DAYS_SEARCHING = 3;
 
 export interface SlotState {
   /** The project currently allowed to send cold email, if any. */
@@ -195,6 +205,14 @@ export async function turnStartsAt(projectId: string, now = new Date()): Promise
   const decision = await mayStartOutreach(projectId);
   if (decision.may) return now;
 
+  /*
+   * A project still searching has no date, and saying otherwise is worse than
+   * saying nothing: "first contact in 1 minute" next to "still searching" is
+   * the page contradicting itself again, and the confident half is the wrong
+   * half. The reason carries the information; the clock cannot.
+   */
+  if (decision.reason === "still searching") return null;
+
   // Out of allowance but still holding the slot: it resumes at midnight.
   if (project.outreachStartedAt && !project.outreachCompletedAt) {
     return startOfTomorrow(now, 1);
@@ -219,6 +237,82 @@ export async function turnStartsAt(projectId: string, now = new Date()): Promise
 /** Midnight, `days` from now. Zero means today. */
 function startOfTomorrow(now: Date, days: number): Date {
   return new Date(now.getFullYear(), now.getMonth(), now.getDate() + days);
+}
+
+export interface Readiness {
+  ready: boolean;
+  usable: number;
+  target: number;
+  reasonHe: string;
+}
+
+/**
+ * Has this project finished assembling its shortlist?
+ *
+ * The slot is one day per project, and a project that takes its day with
+ * nineteen of thirty suppliers spends the day, sends nineteen, and then needs a
+ * second day for the rest - pushing everything behind it back. Worse, the
+ * queue looked like it was working: the page said "first contact to 16
+ * suppliers" without ever mentioning that the search was still running.
+ *
+ * So the turn waits for the list. Bounded three ways, because some products
+ * genuinely have twelve manufacturers: the target, the search angles running
+ * out, or three days elapsed.
+ */
+export async function shortlistReady(projectId: string): Promise<Readiness> {
+  const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+  if (!project) {
+    return { ready: false, usable: 0, target: TARGET_LEADS, reasonHe: "הפרויקט לא נמצא" };
+  }
+
+  const leads = await db
+    .select({
+      email: supplierLeads.email,
+      status: supplierLeads.status,
+      matchScore: supplierLeads.matchScore,
+    })
+    .from(supplierLeads)
+    .where(eq(supplierLeads.projectId, projectId));
+
+  const usable = leads.filter(
+    (lead) =>
+      (lead.email !== null || lead.status === "contacted") &&
+      (lead.matchScore ?? 0) >= AUTO_APPROVE_SCORE &&
+      lead.status !== "rejected",
+  ).length;
+
+  if (usable >= TARGET_LEADS) {
+    return { ready: true, usable, target: TARGET_LEADS, reasonHe: "הרשימה מלאה" };
+  }
+
+  const roundsLeft = MAX_DISCOVERY_RUNS - (project.discoveryRuns ?? 0);
+  if (roundsLeft <= 0) {
+    return {
+      ready: true,
+      usable,
+      target: TARGET_LEADS,
+      reasonHe: `החיפוש מיצה את כל הזוויות ומצא ${usable}`,
+    };
+  }
+
+  const daysSearching = Math.floor(
+    (Date.now() - project.createdAt.getTime()) / 86_400_000,
+  );
+  if (daysSearching >= MAX_DAYS_SEARCHING) {
+    return {
+      ready: true,
+      usable,
+      target: TARGET_LEADS,
+      reasonHe: `${daysSearching} ימים בחיפוש - יוצא לדרך עם ${usable}`,
+    };
+  }
+
+  return {
+    ready: false,
+    usable,
+    target: TARGET_LEADS,
+    reasonHe: `עדיין מחפש - ${usable} מתוך ${TARGET_LEADS} ספקים ברי-פנייה, ${roundsLeft} זוויות חיפוש נותרו`,
+  };
 }
 
 export type SlotDecision =
@@ -270,7 +364,22 @@ export async function mayStartOutreach(projectId: string): Promise<SlotDecision>
     };
   }
 
-  const queue = await waiting();
+  /*
+   * A project still assembling its shortlist does not hold up the queue.
+   *
+   * It also does not take its day early. One slot per project per day only
+   * means something if the project uses the day on a finished list - sending to
+   * nineteen of thirty and coming back tomorrow for the rest costs two days and
+   * pushes everything behind it back.
+   */
+  const readiness = await shortlistReady(projectId);
+  if (!readiness.ready) {
+    return { may: false, reason: "still searching", reasonHe: readiness.reasonHe };
+  }
+
+  const all = await waiting();
+  const readiness_ = await Promise.all(all.map((p) => shortlistReady(p.id)));
+  const queue = all.filter((_, i) => readiness_[i]!.ready);
   const place = queue.findIndex((p) => p.id === projectId);
 
   if (await dayAlreadyUsed()) {
