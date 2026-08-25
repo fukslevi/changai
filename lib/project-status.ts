@@ -14,6 +14,7 @@ import { inArray, sql } from "drizzle-orm";
 import { db, messages, outreach, projects, supplierLeads } from "./db";
 import { loadMandate } from "./negotiate/mandate";
 import { pendingQuestions } from "./questions";
+import { mayStartOutreach } from "./outreach/slot";
 
 export type Activity =
   | "needs_you"
@@ -258,7 +259,17 @@ export async function projectStatuses(
             : `${open.length} שאלות ממתינות לתשובה שלך`;
     } else if (autonomous && approved > 0) {
       activity = "running";
-      nextAction = `שולח פנייה ראשונה ל-${approved} ספקים במחזורים הקרובים`;
+      /*
+       * Only promise a send the queue has actually authorised. This line said
+       * "sending first contact to 18 suppliers in the coming cycles" on a
+       * project sitting second in the queue, on the same row as "starts
+       * tomorrow" - two answers to one question, and the confident one was
+       * wrong.
+       */
+      const turn = await mayStartOutreach(project.id);
+      nextAction = turn.may
+        ? `שולח פנייה ראשונה ל-${approved} ספקים במחזורים הקרובים`
+        : `${approved} ספקים מוכנים · ${turn.reasonHe}`;
     } else if (live > 0 && awaitingUs === 0 && chasedOut === live - repliedCount && repliedCount > 0) {
       /*
        * Finished means the work stopped for a reason rather than by accident:

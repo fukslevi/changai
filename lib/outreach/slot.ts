@@ -178,6 +178,49 @@ export async function slotState(): Promise<SlotState> {
   };
 }
 
+/**
+ * The day this project's cold outreach actually begins.
+ *
+ * Position in the queue is a number of days, not a place in a list: the slot
+ * changes hands once a day, so second in line means the day after tomorrow.
+ * Three separate parts of the page were each answering this for themselves and
+ * giving three different answers on the same row - "starts tomorrow", "in about
+ * 4 hours", and "in the coming cycles" - which is what a queue position looks
+ * like when nothing owns the calculation.
+ */
+export async function turnStartsAt(projectId: string, now = new Date()): Promise<Date | null> {
+  const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+  if (!project || project.pausedAt || project.archivedAt) return null;
+
+  const decision = await mayStartOutreach(projectId);
+  if (decision.may) return now;
+
+  // Out of allowance but still holding the slot: it resumes at midnight.
+  if (project.outreachStartedAt && !project.outreachCompletedAt) {
+    return startOfTomorrow(now, 1);
+  }
+
+  const queue = await waiting();
+  const index = queue.findIndex((p) => p.id === projectId);
+  if (index === -1) return null;
+
+  const current = await holder();
+  const used = await dayAlreadyUsed();
+
+  /*
+   * Everyone ahead takes a day, and the holder takes one more if it is still
+   * sending. Days rather than hours: a project cannot start on the same day as
+   * the one before it, however early that one finished.
+   */
+  const daysAhead = index + (current ? 1 : 0) + (used && !current ? 1 : 0);
+  return startOfTomorrow(now, Math.max(daysAhead, used || current ? 1 : 0));
+}
+
+/** Midnight, `days` from now. Zero means today. */
+function startOfTomorrow(now: Date, days: number): Date {
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate() + days);
+}
+
 export type SlotDecision =
   | { may: true; remaining: number }
   | { may: false; reasonHe: string; reason: string };
@@ -227,21 +270,35 @@ export async function mayStartOutreach(projectId: string): Promise<SlotDecision>
     };
   }
 
+  const queue = await waiting();
+  const place = queue.findIndex((p) => p.id === projectId);
+
   if (await dayAlreadyUsed()) {
+    /*
+     * "Tomorrow" is only true for whoever is at the front. Second in line is
+     * the day after, and saying otherwise on every queued project is how the
+     * page came to promise two of them the same day.
+     */
+    const days = place <= 0 ? 1 : place + 1;
+    const whenHe =
+      days === 1 ? "מתחיל מחר" : days === 2 ? "מתחיל מחרתיים" : `מתחיל בעוד ${days} ימים`;
+
     return {
       may: false,
       reason: "day already used",
-      reasonHe: "כבר יצאו פניות היום מפרויקט אחר. הפרויקט הזה מתחיל מחר",
+      reasonHe:
+        place <= 0
+          ? `כבר יצאו פניות היום מפרויקט אחר. ${whenHe}`
+          : `מקום ${place + 1} בתור · ${whenHe}`,
     };
   }
 
   // Only the front of the queue may take it.
-  const queue = await waiting();
   if (queue[0] && queue[0].id !== projectId) {
     return {
       may: false,
       reason: "not first in queue",
-      reasonHe: `${queue[0].name} לפניו בתור`,
+      reasonHe: `מקום ${place + 1} בתור · ${queue[0].name} לפניו`,
     };
   }
 

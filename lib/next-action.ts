@@ -22,7 +22,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db, messages, projects } from "./db";
 import { withinSupplierHours } from "./inbox/autopilot";
 import { campaignStatus } from "./outreach/batch";
-import { mayStartOutreach } from "./outreach/slot";
+import { mayStartOutreach, turnStartsAt } from "./outreach/slot";
 import { silentThreads } from "./inbox/followup";
 
 export interface NextAction {
@@ -142,11 +142,18 @@ export async function nextActionsFor(
   const campaign = await campaignStatus(projectId);
   if (campaign.pending.length > 0) {
     const slot = await mayStartOutreach(projectId);
+    /*
+     * The queue owns this date. Working it out here as "tomorrow" was wrong for
+     * anyone past the front of the line - second in the queue is the day after
+     * tomorrow, not tonight at midnight - and it disagreed with the two other
+     * places on the page that were also answering it.
+     */
+    const turn = await turnStartsAt(projectId, now);
     actions.push({
       kind: "outreach",
       labelHe: `פנייה ראשונה ל${campaign.pending.length === 1 ? "" : "-"}${suppliers(campaign.pending.length)}`,
       count: campaign.pending.length,
-      at: slot.may ? cycle : nextDayStart(now),
+      at: slot.may ? cycle : turn,
       whyHe: slot.may ? null : slot.reasonHe,
     });
   }

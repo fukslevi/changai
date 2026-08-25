@@ -203,14 +203,32 @@ export async function sendReply(
     : null;
 
   const signature = `\n\nBest regards,\n${settings.senderName}\n${settings.senderTitle}\n${settings.companyName}`;
-  const subject = row.subject.startsWith("Re: ") ? row.subject : `Re: ${row.subject}`;
+
+  /*
+   * Answer in the conversation they wrote in, not the one we opened.
+   *
+   * These are usually the same thread, and were assumed to be. They are not
+   * when the supplier's colleague forwards the enquiry internally and the
+   * salesperson replies to the forward: Gmail gives that a new threadId, and a
+   * reply addressed to the original lands in a conversation the supplier is not
+   * reading. Sureall's Kevin asked whether UL and SGS were mandatory, got a
+   * correct answer twenty-two minutes later, and saw silence for fourteen hours
+   * because the answer was filed under a thread he had never seen.
+   *
+   * The subject follows theirs for the same reason: clients that thread on the
+   * subject line rather than on headers need to see their own "Re: Fw: ..." to
+   * keep it together.
+   */
+  const baseSubject = latestInbound?.subject ?? row.subject;
+  const subject = baseSubject.startsWith("Re: ") ? baseSubject : `Re: ${baseSubject}`;
+  const threadId = latestInbound?.gmailThreadId ?? row.gmailThreadId;
 
   const result = await sendEmail({
     to: replyTo,
     subject,
     body: `${body.trim()}${signature}`,
     fromName: `${settings.senderName} | ${settings.companyName}`,
-    threadId: row.gmailThreadId,
+    threadId,
     ...(inReplyTo ? { inReplyTo, references: inReplyTo } : {}),
   });
 

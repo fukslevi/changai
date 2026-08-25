@@ -152,7 +152,14 @@ export default async function ProjectsPage() {
                     </div>
                   )}
                   {stats.get(p.id) && <Stats stats={stats.get(p.id)!} />}
-                  {upcoming.get(p.id) && (
+                  {/*
+                    One line about what happens next, not two. The row carried
+                    both this and the status summary, and they were written by
+                    different code answering the same question - which is how
+                    "starts tomorrow" and "in about 4 hours" ended up stacked on
+                    top of each other.
+                  */}
+                  {upcoming.get(p.id) ? (
                     <div className="muted" style={{ marginTop: 3, fontSize: 12.5 }} dir="rtl">
                       {upcoming.get(p.id)!.labelHe}
                       {upcoming.get(p.id)!.at && (
@@ -161,16 +168,18 @@ export default async function ProjectsPage() {
                           {soon(upcoming.get(p.id)!.at!)}
                         </strong>
                       )}
+                      {upcoming.get(p.id)!.whyHe && (
+                        <div className="muted" style={{ fontSize: 12 }}>
+                          {upcoming.get(p.id)!.whyHe}
+                        </div>
+                      )}
                     </div>
-                  )}
-                  {statuses.get(p.id)?.nextAction && (
-                    <div
-                      className="muted"
-                      style={{ marginTop: 3, fontSize: 12.5 }}
-                      dir="rtl"
-                    >
-                      {statuses.get(p.id)?.nextAction}
-                    </div>
+                  ) : (
+                    statuses.get(p.id)?.nextAction && (
+                      <div className="muted" style={{ marginTop: 3, fontSize: 12.5 }} dir="rtl">
+                        {statuses.get(p.id)?.nextAction}
+                      </div>
+                    )
                   )}
                 </div>
                 <div className="row" style={{ gap: 6 }}>
