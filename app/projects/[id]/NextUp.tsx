@@ -19,6 +19,7 @@ const ICON: Record<NextAction["kind"], string> = {
   reply: "↩",
   outreach: "→",
   chase: "↻",
+  search: "⌕",
   idle: "·",
 };
 
@@ -26,6 +27,7 @@ const COLOUR: Record<NextAction["kind"], string> = {
   reply: "var(--ok)",
   outreach: "var(--accent)",
   chase: "var(--warn)",
+  search: "var(--accent)",
   idle: "var(--muted)",
 };
 

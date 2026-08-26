@@ -176,6 +176,37 @@ export async function reenrichMissing(
 }
 
 /**
+ * Leads that will actually become an outreach.
+ *
+ * The one definition of "how far along is this project", used by the search
+ * loop, by the gate that decides whether to search at all, and by the page.
+ * It existed inside the loop and nowhere else, so the gate outside counted raw
+ * leads instead - and a project holding thirty-two leads of which nineteen had
+ * an address and a passing score was judged finished. Soft Kettlebell stopped
+ * searching eleven suppliers short of its target and nothing said so.
+ *
+ * A lead needs an address and a score above the approval bar. Anything looser
+ * counts rows that will never be written to.
+ */
+export async function usableLeadCount(projectId: string): Promise<number> {
+  const leads = await db
+    .select({
+      email: supplierLeads.email,
+      status: supplierLeads.status,
+      matchScore: supplierLeads.matchScore,
+    })
+    .from(supplierLeads)
+    .where(eq(supplierLeads.projectId, projectId));
+
+  return leads.filter(
+    (lead) =>
+      (lead.email !== null || lead.status === "contacted") &&
+      (lead.matchScore ?? 0) >= AUTO_APPROVE_SCORE &&
+      lead.status !== "rejected",
+  ).length;
+}
+
+/**
  * keywords -> search -> company site -> email -> score -> pending leads.
  *
  * Nothing here contacts anyone. Every lead lands as `pending` for the operator

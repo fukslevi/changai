@@ -9,7 +9,13 @@
  */
 import { eq } from "drizzle-orm";
 import { db, projects, supplierLeads } from "../db";
-import { MAX_DISCOVERY_RUNS, reenrichMissing, runDiscovery, TARGET_LEADS } from "../discovery/run";
+import {
+  MAX_DISCOVERY_RUNS,
+  reenrichMissing,
+  runDiscovery,
+  TARGET_LEADS,
+  usableLeadCount,
+} from "../discovery/run";
 import { approveAllAbove } from "../actions/discovery";
 import { campaignStatus, prepareCampaign, sendNext } from "./batch";
 import { buildOutreachEmail } from "./template";
@@ -214,18 +220,21 @@ export async function runCampaign(
    * cycle; the reverse is not true, because a day's unsent allowance does not
    * come back.
    */
-  const leadCount = (
-    await db
-      .select({ id: supplierLeads.id })
-      .from(supplierLeads)
-      .where(eq(supplierLeads.projectId, projectId))
-  ).length;
-
+  /*
+   * Counted the same way the search counts it, which it was not.
+   *
+   * This gate used the raw number of stored leads while the target inside the
+   * search means leads with an address and a passing score. A project holding
+   * thirty-two rows of which nineteen were usable read as finished, and three
+   * of five projects had quietly stopped searching short of their target with
+   * nothing on the page to say so.
+   */
+  const usable = await usableLeadCount(projectId);
   const timeLeft = deadline - Date.now();
 
   if (
     timeLeft > 25_000 &&
-    leadCount < TARGET_LEADS &&
+    usable < TARGET_LEADS &&
     (project.discoveryRuns ?? 0) < MAX_DISCOVERY_RUNS
   ) {
     await runDiscovery(projectId, {

@@ -24,9 +24,10 @@ import { withinSupplierHours } from "./inbox/autopilot";
 import { campaignStatus } from "./outreach/batch";
 import { mayStartOutreach, turnStartsAt } from "./outreach/slot";
 import { silentThreads } from "./inbox/followup";
+import { MAX_DISCOVERY_RUNS, TARGET_LEADS, usableLeadCount } from "./discovery/run";
 
 export interface NextAction {
-  kind: "reply" | "outreach" | "chase" | "idle";
+  kind: "reply" | "outreach" | "chase" | "search" | "idle";
   /** What will happen, in Hebrew. */
   labelHe: string;
   count: number;
@@ -155,6 +156,35 @@ export async function nextActionsFor(
       count: campaign.pending.length,
       at: slot.may ? cycle : turn,
       whyHe: slot.may ? null : slot.reasonHe,
+    });
+  }
+
+  /*
+   * Still looking for suppliers.
+   *
+   * Worth its own line because the question "is it still searching?" had no
+   * answer on the page - and for three projects out of five the answer was no,
+   * silently, eleven suppliers short of the target. A search that has stopped
+   * and a search that is running look identical if neither is shown.
+   */
+  const usable = await usableLeadCount(projectId);
+  const roundsLeft = MAX_DISCOVERY_RUNS - (project.discoveryRuns ?? 0);
+
+  if (usable < TARGET_LEADS && roundsLeft > 0) {
+    actions.push({
+      kind: "search",
+      labelHe: `מחפש עוד ספקים · ${usable} מתוך ${TARGET_LEADS}`,
+      count: TARGET_LEADS - usable,
+      at: cycle,
+      whyHe: `${roundsLeft} זוויות חיפוש נותרו`,
+    });
+  } else if (usable < TARGET_LEADS) {
+    actions.push({
+      kind: "search",
+      labelHe: `החיפוש מוצה · ${usable} ספקים ברי-פנייה מתוך ${TARGET_LEADS}`,
+      count: 0,
+      at: null,
+      whyHe: "כל זוויות החיפוש נוסו. אפשר להוסיף ספקים ידנית לפי כתובת אתר",
     });
   }
 
