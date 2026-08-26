@@ -24,7 +24,7 @@ import { withinSupplierHours } from "./inbox/autopilot";
 import { campaignStatus } from "./outreach/batch";
 import { mayStartOutreach, turnStartsAt } from "./outreach/slot";
 import { silentThreads } from "./inbox/followup";
-import { MAX_DISCOVERY_RUNS, TARGET_LEADS, usableLeadCount } from "./discovery/run";
+import { searchState } from "./discovery/run";
 
 export interface NextAction {
   kind: "reply" | "outreach" | "chase" | "search" | "idle";
@@ -167,24 +167,17 @@ export async function nextActionsFor(
    * silently, eleven suppliers short of the target. A search that has stopped
    * and a search that is running look identical if neither is shown.
    */
-  const usable = await usableLeadCount(projectId);
-  const roundsLeft = MAX_DISCOVERY_RUNS - (project.discoveryRuns ?? 0);
+  const search = await searchState(projectId);
 
-  if (usable < TARGET_LEADS && roundsLeft > 0) {
+  if (search.usable < search.target) {
     actions.push({
       kind: "search",
-      labelHe: `מחפש עוד ספקים · ${usable} מתוך ${TARGET_LEADS}`,
-      count: TARGET_LEADS - usable,
-      at: cycle,
-      whyHe: `${roundsLeft} זוויות חיפוש נותרו`,
-    });
-  } else if (usable < TARGET_LEADS) {
-    actions.push({
-      kind: "search",
-      labelHe: `החיפוש מוצה · ${usable} ספקים ברי-פנייה מתוך ${TARGET_LEADS}`,
-      count: 0,
-      at: null,
-      whyHe: "כל זוויות החיפוש נוסו. אפשר להוסיף ספקים ידנית לפי כתובת אתר",
+      labelHe: search.shouldContinue
+        ? `מחפש עוד ספקים · ${search.usable} מתוך ${search.target}`
+        : `החיפוש נעצר · ${search.usable} מתוך ${search.target}`,
+      count: search.target - search.usable,
+      at: search.shouldContinue ? cycle : null,
+      whyHe: search.reasonHe,
     });
   }
 

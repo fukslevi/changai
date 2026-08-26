@@ -133,6 +133,17 @@ export const projects = pgTable("projects", {
    */
   searchAngles: jsonb("search_angles").$type<{ query: string; reason: string }[]>(),
   /**
+   * Rounds run today, and which day that is.
+   *
+   * The search no longer stops at a fixed number of rounds - it stops when a
+   * day passes without finding anybody - so something has to bound the cost. A
+   * round is a few searches and one scoring call, which is cheap once and
+   * unbounded across twelve cycles a day.
+   */
+  discoveryRoundsToday: integer("discovery_rounds_today").notNull().default(0),
+  /** ISO date the counter above belongs to. */
+  discoveryDay: text("discovery_day"),
+  /**
    * When this project was granted the outreach slot.
    *
    * One project may send cold email at a time, and the slot changes hands at

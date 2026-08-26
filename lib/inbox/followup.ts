@@ -47,10 +47,20 @@ function daysBetween(from: Date, to: Date): number {
  */
 function chaseBody(productName: string, attempt: number, everReplied: boolean): string {
   if (attempt === 1) {
+    /*
+     * A supplier who has written back and then gone quiet has usually stalled
+     * on the price rather than on the specification, so this asks for their
+     * number rather than for "the quotation" in the abstract. A factory that
+     * cannot meet a target can still name what it does charge, and that number
+     * is the most useful thing in the whole exchange - it is the honest floor
+     * for the product, which the ones who agreed to everything never reveal.
+     */
     return everReplied
       ? `Following up on my last message about the ${productName}.
 
-Could you let me know where the quotation stands? If anything in the specification is unclear, tell me which point and I will clarify it.`
+Could you send your best price at each of our quantities? If our target does not work for you, send your own number rather than nothing - I am putting a costed proposal in front of our client and I can only include suppliers who have given me a price.
+
+If something in the specification is driving the cost, tell me which point and I will look at whether it can change.`
       : `I wrote last week about the ${productName} and have not heard back.
 
 If this is something you manufacture, I would still like your quotation - the specification and quantities are in the attachment of my first email.

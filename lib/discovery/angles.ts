@@ -35,6 +35,8 @@ export async function generateAngles(
   productName: string,
   keywords: string[],
   requirements: string[],
+  /** Queries already tried, so a second batch is genuinely new ground. */
+  avoid: string[] = [],
 ): Promise<SearchAngle[]> {
   const client = new Anthropic();
 
@@ -68,7 +70,13 @@ factories rank.
 Each query is a standalone search string. It may include the product term if
 that helps, but the value is in the part that is not the product term.
 
-Return 10-14 angles, ordered by how likely each is to reach a real factory.`,
+Return 10-14 angles, ordered by how likely each is to reach a real factory.
+
+If a list of queries already tried is given, none of yours may repeat them or be
+a trivial rewording of one. Go somewhere else: a different material, a different
+sub-assembly, a different manufacturing cluster, the term a different national
+market uses. Running out of genuinely new angles is a real answer - returning
+five good ones is better than padding to fourteen with variations.`,
     messages: [
       {
         role: "user",

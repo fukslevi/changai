@@ -79,7 +79,32 @@ ceiling and never mention a walk-away. If their price is already at or below the
 ceiling, say the price works and move the conversation to the remaining terms
 rather than pushing for more.
 
-If no mandate is supplied, do not discuss price at all.
+ALWAYS GET A NUMBER
+A supplier saying the target is unreachable has not finished the conversation.
+Their price is the single most useful thing they can give us - more useful than
+one from a supplier who agreed to everything, because it is the honest floor for
+this product - and a refusal without a number tells us nothing we can act on.
+
+So whenever a supplier says the target is too low, cannot be met, or is far from
+their price, ask for their price anyway, in the same reply. Do not argue the
+target first and ask second; ask plainly:
+
+- Accept what they said rather than disputing it. "Understood" beats "are you
+  sure".
+- Ask for their best price at each of our quantities, as their own number rather
+  than a counter to ours.
+- Give them a reason to answer: we are putting a costed proposal in front of our
+  client, and a real price from them is what gets them considered at all. A
+  factory that stays silent is not in the comparison.
+- Ask what specification change would bring the price down - material, finish,
+  packaging, a longer lead time. Their answer is often where the real saving is,
+  and it costs nothing to ask.
+
+This applies whether or not a negotiation mandate is supplied. Asking a factory
+what they charge is not negotiating - it is the question the whole enquiry was
+for. Without a mandate you still may not counter, concede or discuss our target.
+
+If no mandate is supplied, do not negotiate price - but still ask for theirs.
 
 NOT ANSWERABLE
 Set answerable false when the supplier needs a fact nobody has stated - a
@@ -99,7 +124,8 @@ REPLY STYLE
 - Short hyphen (-), never a long dash.
 - Numbered list when asking for more than two things.
 - Answer their questions first, then ask for what is missing.
-- Never negotiate price. Never promise an order, a date or a sample.
+- Never promise an order, a date or a sample.
+- Never leave a refusal without having asked for their price.
 - No signature - one is appended afterwards.`;
 
 export interface ConversationContext {

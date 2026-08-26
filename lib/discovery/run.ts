@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, sql } from "drizzle-orm";
 import { db, projects, requirements, supplierLeads } from "../db";
 import { generateAngles } from "./angles";
 import { enrichDomain } from "./enrich";
@@ -67,19 +67,40 @@ const BROADENING_SUFFIXES = [
   "contract manufacturer China",
 ];
 
-/** How many product-specific angles are generated once the generic ones run out. */
+/** How many product-specific angles are generated in one batch. */
 const MAX_GENERATED_ANGLES = 14;
 
 /**
- * Passes before the shortlist is accepted as final.
+ * The search does not give up at a fixed number of rounds any more.
  *
- * The operator's keywords, then every generic angle, then the ones invented
- * from the product itself. It used to be four - fewer than the angles that
- * already existed - so the search gave up having tried a third of what it knew
- * how to try. A product with few manufacturers still ends early, because every
- * round stops as soon as the target is reached.
+ * A round cap is the wrong control: it stops a search that is still finding
+ * suppliers and keeps running one that is not. What decides it now is whether
+ * the last day produced anything, with a floor of a full day before that
+ * question is even asked - a product whose keywords are unlucky deserves more
+ * than an afternoon.
+ *
+ * Kept as the size of one batch of angles, which is when a fresh batch is
+ * generated rather than when the search ends.
  */
+export const ANGLES_PER_BATCH = MAX_GENERATED_ANGLES;
+
+/** Retained for callers that still describe progress in rounds. */
 export const MAX_DISCOVERY_RUNS = BROADENING_SUFFIXES.length + MAX_GENERATED_ANGLES + 1;
+
+/** The search runs at least this long before "is it still working" is asked. */
+export const MIN_HOURS_SEARCHING = 24;
+
+/** And never longer than this, whatever it is finding. */
+export const MAX_DAYS_SEARCHING = 14;
+
+/**
+ * Rounds a project may run in one day.
+ *
+ * Each round is a handful of searches, some page fetches and one scoring call.
+ * Cheap individually, and unbounded across twelve cycles a day if nothing says
+ * otherwise - so this is the cost ceiling, and productivity is the stop.
+ */
+export const MAX_ROUNDS_PER_DAY = 12;
 
 
 /**
@@ -101,16 +122,39 @@ async function queriesForRound(
     return project.keywords.map((k) => `${k} ${BROADENING_SUFFIXES[round - 1]}`);
   }
 
-  let angles = project.searchAngles;
-  if (!angles || angles.length === 0) {
-    angles = await generateAngles(project.name, project.keywords, projectRequirements);
+  let angles = project.searchAngles ?? [];
+  const index = round - BROADENING_SUFFIXES.length - 1;
+
+  /*
+   * Out of angles is not out of ideas.
+   *
+   * The list used to be generated once and the search ended when it ran out,
+   * which made the stopping condition "we thought of fourteen things" rather
+   * than "there is nothing more to find". A fresh batch is asked for with the
+   * tried queries as exclusions, so it has to go somewhere genuinely new - a
+   * different material, sub-assembly, cluster or national term.
+   *
+   * The model returning fewer than asked is a real answer, and the empty list
+   * it eventually returns is what actually ends the search.
+   */
+  if (index >= angles.length) {
+    const fresh = await generateAngles(
+      project.name,
+      project.keywords,
+      projectRequirements,
+      angles.map((a) => a.query),
+    );
+
+    if (fresh.length === 0) return [];
+
+    angles = [...angles, ...fresh];
     await db.update(projects).set({ searchAngles: angles }).where(eq(projects.id, project.id));
     // Keep the in-memory copy in step so later rounds in this same call do not
     // regenerate and overwrite.
     project.searchAngles = angles;
   }
 
-  const angle = angles[round - BROADENING_SUFFIXES.length - 1];
+  const angle = angles[index];
   return angle ? [angle.query] : [];
 }
 
@@ -173,6 +217,122 @@ export async function reenrichMissing(
   }
 
   return { tried, found };
+}
+
+/**
+ * Should this project keep looking, and why.
+ *
+ * A round cap answered this before, and a round cap is the wrong control: it
+ * stops a search that is still producing suppliers and keeps running one that
+ * is not. What matters is whether the last day found anything.
+ *
+ * The floor is a full day. A product whose obvious keywords happen to be
+ * unlucky deserves more than an afternoon before anyone concludes its factories
+ * do not exist, and a day of searching costs a few dollars.
+ *
+ * After that the test is productivity, which is the honest resource control:
+ * the search stops when it stops working rather than when a counter says so.
+ */
+export interface SearchState {
+  usable: number;
+  target: number;
+  roundsUsed: number;
+  roundsToday: number;
+  hoursSearching: number;
+  /** Contactable leads found in the last day. Zero is the stopping signal. */
+  usableFoundLast24h: number;
+  shouldContinue: boolean;
+  reasonHe: string;
+}
+
+export async function searchState(projectId: string): Promise<SearchState> {
+  const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+  const usable = await usableLeadCount(projectId);
+
+  const base: Omit<SearchState, "shouldContinue" | "reasonHe"> = {
+    usable,
+    target: TARGET_LEADS,
+    roundsUsed: project?.discoveryRuns ?? 0,
+    roundsToday: 0,
+    hoursSearching: 0,
+    usableFoundLast24h: 0,
+  };
+
+  if (!project) return { ...base, shouldContinue: false, reasonHe: "הפרויקט לא נמצא" };
+
+  const hoursSearching = (Date.now() - project.createdAt.getTime()) / 3_600_000;
+  const dayAgo = new Date(Date.now() - 24 * 3_600_000);
+
+  const recent = await db
+    .select({
+      email: supplierLeads.email,
+      status: supplierLeads.status,
+      matchScore: supplierLeads.matchScore,
+      createdAt: supplierLeads.createdAt,
+    })
+    .from(supplierLeads)
+    .where(and(eq(supplierLeads.projectId, projectId), gte(supplierLeads.createdAt, dayAgo)));
+
+  const usableFoundLast24h = recent.filter(
+    (lead) =>
+      (lead.email !== null || lead.status === "contacted") &&
+      (lead.matchScore ?? 0) >= AUTO_APPROVE_SCORE &&
+      lead.status !== "rejected",
+  ).length;
+
+  const roundsToday = project.discoveryRoundsToday ?? 0;
+  const sameDay =
+    project.discoveryDay !== null &&
+    project.discoveryDay === new Date().toISOString().slice(0, 10);
+
+  const state = {
+    ...base,
+    hoursSearching: Math.floor(hoursSearching),
+    usableFoundLast24h,
+    roundsToday: sameDay ? roundsToday : 0,
+  };
+
+  if (usable >= TARGET_LEADS) {
+    return { ...state, shouldContinue: false, reasonHe: `הגיע ל-${usable} ספקים ברי-פנייה` };
+  }
+
+  if (state.roundsToday >= MAX_ROUNDS_PER_DAY) {
+    return {
+      ...state,
+      shouldContinue: false,
+      reasonHe: `מכסת החיפוש היומית מוצתה (${state.roundsToday}) · ממשיך מחר`,
+    };
+  }
+
+  if (hoursSearching >= MAX_DAYS_SEARCHING * 24) {
+    return {
+      ...state,
+      shouldContinue: false,
+      reasonHe: `${MAX_DAYS_SEARCHING} ימים בחיפוש · נעצר עם ${usable} ספקים`,
+    };
+  }
+
+  if (hoursSearching < MIN_HOURS_SEARCHING) {
+    return {
+      ...state,
+      shouldContinue: true,
+      reasonHe: `ביום הראשון של החיפוש - ממשיך בכל מקרה עד ${MIN_HOURS_SEARCHING} שעות`,
+    };
+  }
+
+  if (usableFoundLast24h > 0) {
+    return {
+      ...state,
+      shouldContinue: true,
+      reasonHe: `${usableFoundLast24h} ספקים חדשים ביממה האחרונה - ממשיך כל עוד זה מניב`,
+    };
+  }
+
+  return {
+    ...state,
+    shouldContinue: false,
+    reasonHe: `יממה בלי ספק חדש · נעצר עם ${usable} מתוך ${TARGET_LEADS}. אפשר להוסיף ידנית לפי כתובת אתר`,
+  };
 }
 
 /**
@@ -285,7 +445,6 @@ export async function runDiscovery(
 
   for (let i = 0; i < maxRounds; i++) {
     const round = startRound + i;
-    if (round >= MAX_DISCOVERY_RUNS) break;
     if (usable + hits.length >= target) break;
     // The cycle has a budget and search is the most expensive thing in it.
     // Stopping between rounds costs nothing: the next call resumes here.
@@ -329,11 +488,23 @@ export async function runDiscovery(
     .where(eq(supplierLeads.projectId, projectId));
   const decided = new Set(existing.filter((e) => e.status !== "pending").map((e) => e.domain));
 
-  // Counted in angles actually tried, not calls made. A call that stopped on
-  // its deadline before searching must not burn an angle it never used.
+  /*
+   * Counted in angles actually tried, not calls made. A call that stopped on
+   * its deadline before searching must not burn an angle it never used.
+   *
+   * The daily counter resets by comparing the stored date, so nothing has to
+   * run at midnight to clear it.
+   */
+  const today = new Date().toISOString().slice(0, 10);
+  const sameDay = project.discoveryDay === today;
+
   await db
     .update(projects)
-    .set({ discoveryRuns: startRound + roundsRun })
+    .set({
+      discoveryRuns: startRound + roundsRun,
+      discoveryDay: today,
+      discoveryRoundsToday: (sameDay ? (project.discoveryRoundsToday ?? 0) : 0) + roundsRun,
+    })
     .where(eq(projects.id, projectId));
 
   let saved = 0;

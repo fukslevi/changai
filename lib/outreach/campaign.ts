@@ -9,13 +9,7 @@
  */
 import { eq } from "drizzle-orm";
 import { db, projects, supplierLeads } from "../db";
-import {
-  MAX_DISCOVERY_RUNS,
-  reenrichMissing,
-  runDiscovery,
-  TARGET_LEADS,
-  usableLeadCount,
-} from "../discovery/run";
+import { reenrichMissing, runDiscovery, searchState } from "../discovery/run";
 import { approveAllAbove } from "../actions/discovery";
 import { campaignStatus, prepareCampaign, sendNext } from "./batch";
 import { buildOutreachEmail } from "./template";
@@ -221,22 +215,15 @@ export async function runCampaign(
    * come back.
    */
   /*
-   * Counted the same way the search counts it, which it was not.
-   *
-   * This gate used the raw number of stored leads while the target inside the
-   * search means leads with an address and a passing score. A project holding
-   * thirty-two rows of which nineteen were usable read as finished, and three
-   * of five projects had quietly stopped searching short of their target with
-   * nothing on the page to say so.
+   * Whether to keep looking is one question with one answer, and it lives in
+   * the search rather than here. This used to count stored rows against the
+   * target - a different number from the one the search itself uses - and three
+   * projects out of five had stopped short without anything saying so.
    */
-  const usable = await usableLeadCount(projectId);
+  const search = await searchState(projectId);
   const timeLeft = deadline - Date.now();
 
-  if (
-    timeLeft > 25_000 &&
-    usable < TARGET_LEADS &&
-    (project.discoveryRuns ?? 0) < MAX_DISCOVERY_RUNS
-  ) {
+  if (timeLeft > 25_000 && search.shouldContinue) {
     await runDiscovery(projectId, {
       maxRounds: 4,
       deadline: Math.min(Date.now() + DISCOVERY_BUDGET_MS, deadline - 10_000),
