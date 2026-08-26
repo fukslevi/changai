@@ -505,7 +505,7 @@ export const messages = pgTable(
      * version: the supplier still sees a normal "Re:", and the count comes from
      * a field that cannot silently disagree with the text.
      */
-    outboundKind: text("outbound_kind").$type<"reply" | "chase">(),
+    outboundKind: text("outbound_kind").$type<"reply" | "chase" | "price_ask">(),
     /**
      * The Fiddle Leaf lesson: the numbers are in the attachment, the
      * intelligence ("over length for Amazon warehouse") is in the body.

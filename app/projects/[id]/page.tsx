@@ -426,6 +426,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           <span className="muted" style={{ fontSize: 14 }}>({repliedCount} ענו)</span>
         </h2>
         <Guide k="replies" />
+        <Guide k="priceAsk" />
         <Conversations
           projectId={project.id}
           threads={threads}

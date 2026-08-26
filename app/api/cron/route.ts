@@ -3,6 +3,7 @@ import { asc, eq, sql } from "drizzle-orm";
 import { db, projects } from "@/lib/db";
 import { runAutopilot, triageAndPark, withinSendingHours, withinSupplierHours } from "@/lib/inbox/autopilot";
 import { runFollowUps } from "@/lib/inbox/followup";
+import { pressForPrice } from "@/lib/inbox/press";
 import { runCampaign } from "@/lib/outreach/campaign";
 import { markCycleRun } from "@/lib/settings";
 import { pollInbox } from "@/lib/inbox/run";
@@ -95,6 +96,15 @@ export async function GET(request: Request) {
         : await triageAndPark(project.id);
       const chases = await runFollowUps(project.id, { send: canReply });
 
+      /*
+       * Ask the ones who answered and never priced. Inside supplier hours only,
+       * like any other unsolicited follow-up, and a few at a time - this is a
+       * backlog that does not need clearing in one afternoon.
+       */
+      const pressed = canReply
+        ? await pressForPrice(project.id, { limit: 3, deadline })
+        : { asked: [], skipped: [], candidates: await (async () => [])() };
+
       // First contact goes out on the same schedule as everything else. A
       // project that is ready to write to suppliers and simply waits is not
       // autonomous, whatever the setting says.
@@ -131,6 +141,7 @@ export async function GET(request: Request) {
         replied: work.replied.length,
         heldForHuman: work.heldForHuman.length,
         chased: chases.chased.length,
+        pricesAsked: pressed.asked.length,
         closed: chases.closed.length,
         firstContacts: campaign.sent.length,
         stillToContact: campaign.remaining,

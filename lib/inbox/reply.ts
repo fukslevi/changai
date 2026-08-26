@@ -169,7 +169,7 @@ export async function sendReply(
   projectId: string,
   supplierId: string,
   body: string,
-  options: { kind?: "reply" | "chase" } = {},
+  options: { kind?: "reply" | "chase" | "price_ask" } = {},
 ): Promise<ReplyResult> {
   const [supplier] = await db.select().from(suppliers).where(eq(suppliers.id, supplierId));
   if (!supplier?.email) throw new Error("לספק אין כתובת מייל");
