@@ -56,9 +56,20 @@ export async function maxColdPerDay(): Promise<number> {
  * Cold mail sent today, across everything.
  *
  * Counted from the messages rather than from a counter, because a counter is a
- * second copy of the truth and the first thing to drift. First contact and
- * chases both count - a chase is unsolicited mail to somebody who did not
- * answer, which is the same thing the pacing exists to control.
+ * second copy of the truth and the first thing to drift.
+ *
+ * What counts is mail to somebody who has never written to us. First contact
+ * obviously. Chases too - a factory that received an enquiry and ignored it is
+ * being written to a second time unasked, which is the pattern the allowance
+ * exists to meter.
+ *
+ * Replies and price asks do not. Both go to a supplier who already wrote back,
+ * on a thread they are reading, and a warm thread is not what puts a mailbox at
+ * risk - a factory that answered us and is asked for its number is the safest
+ * mail in the system after a direct reply. Making them compete with first
+ * contact for the same thirty would have meant a day of chasing prices was a
+ * day of finding nobody new, which is a trade the allowance was never meant to
+ * force.
  */
 export async function coldSentToday(projectId?: string): Promise<number> {
   const rows = await db
@@ -69,8 +80,8 @@ export async function coldSentToday(projectId?: string): Promise<number> {
         eq(messages.direction, "outbound"),
         gte(messages.receivedAt, startOfToday()),
         projectId ? eq(messages.projectId, projectId) : sql`true`,
-        // Replies are the one kind that never counts.
         sql`${messages.outboundKind} is distinct from 'reply'`,
+        sql`${messages.outboundKind} is distinct from 'price_ask'`,
       ),
     );
 

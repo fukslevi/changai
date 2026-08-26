@@ -188,16 +188,21 @@ export async function sweepBounces(
   return { found, cleared };
 }
 
-/** Hard bounces as a share of what we sent, for the settings page. */
+/**
+ * Hard bounces as a share of what we sent, for the settings page.
+ *
+ * A different denominator from the pacing allowance, deliberately. That one
+ * counts mail to people who never wrote to us, because that is what risks the
+ * mailbox. This one counts every message that could have bounced, because that
+ * is what a bounce rate means - a price ask to an address that has already
+ * answered is not a deliverability test, but it is still a delivery.
+ */
 export async function bounceRate(): Promise<{ sent: number; bounced: number; pct: number | null }> {
   const outbound = await db
     .select({ id: messages.id })
     .from(messages)
     .where(
-      and(
-        eq(messages.direction, "outbound"),
-        sql`${messages.outboundKind} is distinct from 'reply'`,
-      ),
+      eq(messages.direction, "outbound"),
     );
 
   const { found } = await sweepBounces({ apply: false });
