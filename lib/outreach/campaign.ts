@@ -60,65 +60,24 @@ export async function runCampaign(
   }
 
   /*
-   * Top the shortlist up before sending. A first pass that returned nine leads
-   * is not a finished search - it is one angle - and the code that broadens it
-   * existed but nothing ever called it again, so the target was never reached
-   * on any project that already had leads.
-   */
-  const leadCount = (
-    await db.select({ id: supplierLeads.id }).from(supplierLeads).where(eq(supplierLeads.projectId, projectId))
-  ).length;
-
-  if (leadCount < TARGET_LEADS && (project.discoveryRuns ?? 0) < MAX_DISCOVERY_RUNS) {
-    /*
-     * Several angles per cycle now, bounded by a clock rather than a count.
-     * One round every two hours means a dozen angles take a day and a half to
-     * try, which is not what "find me thirty suppliers" means to anyone. The
-     * deadline is what keeps it from starving the rest of the cycle, and a
-     * round that does not fit simply happens next time.
-     */
-    await runDiscovery(projectId, {
-      maxRounds: 4,
-      // Never more than half of what is left, so searching cannot eat the
-      // sending it is supposed to be feeding.
-      deadline: Math.min(Date.now() + DISCOVERY_BUDGET_MS, Date.now() + (deadline - Date.now()) / 2),
-    });
-  }
-
-  /*
-   * Then give the addressless leads another go, before approving. A lead with
-   * no email cannot be approved, so the order matters: enrich, then approve,
-   * then send.
-   */
-  if (Date.now() < deadline - 20_000) {
-    await reenrichMissing(projectId, { limit: 8, deadline: deadline - 15_000 });
-  }
-
-  /*
-   * Approving is outside the discovery gate, and that is the whole point.
+   * Approve first, because it is free.
    *
-   * It used to sit inside, so once a project ran out of discovery rounds it
-   * also stopped approving - LED WORKING LIGHT had four leads with addresses
-   * and good scores sitting pending forever, while the page said five
-   * suppliers had been contacted. Nothing was searching and nothing was
-   * approving, and the two failures looked like one.
+   * A database update with no model call and no network, so it costs nothing to
+   * do before deciding whether there is time for anything else - and without it
+   * a lead scored on the last cycle would not be sendable on this one.
    */
-  const data = new FormData();
-  data.set("projectId", projectId);
-  data.set("threshold", "30");
-  await approveAllAbove({}, data);
+  const approval = new FormData();
+  approval.set("projectId", projectId);
+  approval.set("threshold", "30");
+  await approveAllAbove({}, approval);
 
   const status = await campaignStatus(projectId);
-  if (status.pending.length === 0) {
-    /*
-     * Nothing left to write to, so the slot goes back. Releasing here rather
-     * than at the end of the send loop means a project that was already
-     * finished before this change - or that had its last recipient rejected -
-     * still gives the slot up rather than holding it forever.
-     */
-    await releaseSlot(projectId);
-    return { sent: [], failed: [], remaining: 0, skipped: null };
-  }
+  const run: CampaignRun = {
+    sent: [],
+    failed: [],
+    remaining: status.pending.length,
+    skipped: null,
+  };
 
   /*
    * A project that finished and has since found more suppliers goes back in
@@ -143,47 +102,100 @@ export async function runCampaign(
    * enriching, approving - and none of it writes to anybody, so it runs whether
    * or not this project's turn has come. Only the sending waits.
    */
-  const slot = await mayStartOutreach(projectId);
-  if (!slot.may) {
-    return {
-      sent: [],
-      failed: [],
-      remaining: status.pending.length,
-      skipped: slot.reasonHe,
-    };
-  }
-
-  await claimSlot(projectId);
-
-  // Fails loudly here rather than half way through a list: a missing walk-away
-  // or an unset mailbox should stop the run, not produce three sends and a
-  // crash on the fourth.
-  const prepared = await prepareCampaign(projectId);
-
-  const run: CampaignRun = { sent: [], failed: [], remaining: status.pending.length, skipped: null };
+  const slot = status.pending.length > 0 ? await mayStartOutreach(projectId) : null;
 
   /*
-   * Bounded by what is left of the day, not by a private allowance. The budget
-   * is shared, so a project that finds itself with room for four sends four and
-   * the next project takes whatever survives.
+   * Nothing to send is not a reason to stop.
+   *
+   * Both of these used to return early, and both skipped everything after them
+   * - which now includes the search. A project that has written to all nineteen
+   * of its suppliers and needs eleven more would never look for them again, and
+   * a project waiting its turn would sit still instead of getting its list
+   * ready for when the turn came. Falling through costs nothing and is the
+   * whole point of the time left over.
    */
-  const allowedNow = Math.min(MAX_PER_RUN, slot.remaining);
+  if (status.pending.length === 0) {
+    await releaseSlot(projectId);
+  } else if (slot && !slot.may) {
+    run.skipped = slot.reasonHe;
+  }
 
-  for (let i = 0; i < allowedNow; i++) {
-    if (Date.now() > deadline) break;
+  if (slot?.may) {
+    await claimSlot(projectId);
 
-    const outcome = await sendNext(projectId, prepared);
-    if (!outcome) break;
+    // Fails loudly here rather than half way through a list: a missing
+    // walk-away or an unset mailbox should stop the run, not produce three
+    // sends and a crash on the fourth.
+    const prepared = await prepareCampaign(projectId);
 
-    if (outcome.ok) run.sent.push(outcome.recipient.companyName);
-    else run.failed.push({ company: outcome.recipient.companyName, error: outcome.error ?? "" });
+    /*
+     * Bounded by what is left of the day, not by a private allowance. The
+     * budget is shared, so a project that finds room for four sends four and
+     * the next project takes whatever survives.
+     */
+    const allowedNow = Math.min(MAX_PER_RUN, slot.remaining);
 
-    run.remaining = outcome.remaining;
-    if (outcome.remaining === 0) {
-      await releaseSlot(projectId);
-      break;
+    for (let i = 0; i < allowedNow; i++) {
+      if (Date.now() > deadline) break;
+
+      const outcome = await sendNext(projectId, prepared);
+      if (!outcome) break;
+
+      if (outcome.ok) {
+        run.sent.push(outcome.recipient.companyName);
+      } else {
+        run.failed.push({
+          company: outcome.recipient.companyName,
+          error: outcome.error ?? "",
+        });
+      }
+
+      run.remaining = outcome.remaining;
+      if (outcome.remaining === 0) {
+        await releaseSlot(projectId);
+        break;
+      }
+      if (i < allowedNow - 1) await new Promise((resolve) => setTimeout(resolve, pauseMs()));
     }
-    if (i < allowedNow - 1) await new Promise((r) => setTimeout(r, pauseMs()));
+  }
+
+  /*
+   * Searching happens after sending, with whatever time is left.
+   *
+   * It used to run first, and that was the wrong way round in a way the cycle
+   * made expensive: discovery took up to seventy seconds, re-enrichment took
+   * more, and the deadline is shared across every project in the cycle - so
+   * Ceiling Curtain Track, with twenty-eight suppliers waiting and permission
+   * to write to eleven of them, reached the send loop with no time left and
+   * sent nothing. Three cycles in a row.
+   *
+   * Sending is the point. Searching feeds future sending and can always wait a
+   * cycle; the reverse is not true, because a day's unsent allowance does not
+   * come back.
+   */
+  const leadCount = (
+    await db
+      .select({ id: supplierLeads.id })
+      .from(supplierLeads)
+      .where(eq(supplierLeads.projectId, projectId))
+  ).length;
+
+  const timeLeft = deadline - Date.now();
+
+  if (
+    timeLeft > 25_000 &&
+    leadCount < TARGET_LEADS &&
+    (project.discoveryRuns ?? 0) < MAX_DISCOVERY_RUNS
+  ) {
+    await runDiscovery(projectId, {
+      maxRounds: 4,
+      deadline: Math.min(Date.now() + DISCOVERY_BUDGET_MS, deadline - 10_000),
+    });
+  }
+
+  // Another go at the leads with no address, if anything is still left.
+  if (deadline - Date.now() > 20_000) {
+    await reenrichMissing(projectId, { limit: 8, deadline: deadline - 10_000 });
   }
 
   return run;
