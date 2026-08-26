@@ -98,7 +98,24 @@ export async function GET(request: Request) {
       // First contact goes out on the same schedule as everything else. A
       // project that is ready to write to suppliers and simply waits is not
       // autonomous, whatever the setting says.
-      const campaign = await runCampaign(project.id, { deadline });
+      /*
+       * A campaign that throws must not take the project's whole cycle with
+       * it. Ceiling Curtain Track threw "no saved email" on every run, and
+       * because the throw escaped to the per-project catch, the inbox poll and
+       * triage that had already succeeded were reported as one flat error - and
+       * everything after the campaign, including the search, never ran.
+       */
+      let campaign: Awaited<ReturnType<typeof runCampaign>>;
+      try {
+        campaign = await runCampaign(project.id, { deadline });
+      } catch (err) {
+        campaign = {
+          sent: [],
+          failed: [],
+          remaining: 0,
+          skipped: `שגיאה בשליחה: ${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
 
       // Stamped on the way out, so a project that threw still moves down the
       // queue - otherwise one broken project blocks the rotation permanently.
