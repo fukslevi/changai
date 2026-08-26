@@ -147,8 +147,9 @@ export default async function ProjectsPage() {
                       style={{ marginTop: 3, fontSize: 12.5, color: "var(--warn)" }}
                       dir="rtl"
                     >
-                      בתור לשליחה · מקום {slot.queue.find((q) => q.id === p.id)?.position}
-                      {slot.grantedToday ? " · מתחיל מחר" : ""}
+                      בתור לשליחה · מקום {slot.queue.find((q) => q.id === p.id)?.position} ·{" "}
+                      {slot.queue.find((q) => q.id === p.id)?.pending} ספקים
+                      {slot.remainingToday === 0 ? " · ממשיך מחר" : ""}
                     </div>
                   )}
                   {stats.get(p.id) && <Stats stats={stats.get(p.id)!} />}

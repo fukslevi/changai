@@ -162,6 +162,11 @@ export async function runCampaign(
 
   const run: CampaignRun = { sent: [], failed: [], remaining: status.pending.length, skipped: null };
 
+  /*
+   * Bounded by what is left of the day, not by a private allowance. The budget
+   * is shared, so a project that finds itself with room for four sends four and
+   * the next project takes whatever survives.
+   */
   const allowedNow = Math.min(MAX_PER_RUN, slot.remaining);
 
   for (let i = 0; i < allowedNow; i++) {

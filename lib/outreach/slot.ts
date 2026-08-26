@@ -1,48 +1,42 @@
 /**
- * One project sends cold email at a time, and the slot changes hands once a day.
+ * Thirty cold emails a day, taken from the front of the queue.
  *
- * Both halves are load-bearing, and each alone has a hole:
+ * The unit is the daily email count, not the project. A project is where the
+ * addresses come from, and if it only has nineteen, its nineteen go out and the
+ * remaining eleven come from the next project in line. What must hold is the
+ * number leaving the mailbox: not more, and - just as much the point - not less.
  *
- *   One at a time, alone - a project that finishes by ten in the morning hands
- *   over to another that sends thirty more the same afternoon. Sixty in a day.
+ * This replaces a rule that paced by project instead: one project sending at a
+ * time, the slot changing hands once a day. That guaranteed the ceiling and
+ * quietly gave up the floor. A project with nineteen suppliers spent the whole
+ * day sending nineteen, and the eleven emails the day could have carried simply
+ * never went - which over a week is a project's worth of outreach lost to a
+ * rule meant to protect the mailbox.
  *
- *   One a day, alone - a project takes several cycles to work through its
- *   shortlist, so Monday's project is still sending when Tuesday's starts, and
- *   Wednesday has three of them going at once.
+ * The queue drains oldest first, so the shape is still roughly one project a
+ * day. That is a consequence of the ordering rather than a constraint, which is
+ * the right way round: nothing has to be true about projects for the mailbox to
+ * be safe, only about the count.
  *
- * Together they mean at most one project's worth of cold mail in any day, which
- * is what "one project a day" was meant to promise. The daily cap on how much
- * the holder may send is the third piece: without a number, "a project's worth"
- * is however many suppliers that project happened to find.
- *
- * Replies are not affected by any of this and never queue. Answering someone
- * who wrote to you first is the safest mail there is - it is what builds the
- * mailbox's standing rather than spending it - and a supplier waiting on an
- * answer should not wait because a different product is having its turn.
+ * Replies are outside all of it. They never queue and never count. Answering
+ * someone who wrote to you first builds the mailbox's standing rather than
+ * spending it, and a supplier waiting on an answer should not wait because a
+ * different product is having its turn.
  */
-import { and, asc, eq, gte, isNotNull, isNull, sql } from "drizzle-orm";
-import { db, messages, projects, settings, supplierLeads } from "../db";
-import { AUTO_APPROVE_SCORE, MAX_DISCOVERY_RUNS, TARGET_LEADS } from "../discovery/run";
-
-/**
- * How long a project may hold up the queue while it is still searching.
- *
- * Some products have twelve manufacturers in the world and will never reach
- * thirty. Waiting forever for a number that is not out there would let one
- * narrow product block every other project indefinitely.
- */
-const MAX_DAYS_SEARCHING = 3;
+import { and, asc, eq, gte, isNull, sql } from "drizzle-orm";
+import { db, messages, projects, settings } from "../db";
+import { campaignStatus } from "./batch";
 
 export interface SlotState {
-  /** The project currently allowed to send cold email, if any. */
+  /** The project currently at the front of the queue, if any. */
   holderId: string | null;
   holderName: string | null;
-  /** Projects waiting, in the order they will be granted it. */
-  queue: { id: string; name: string; position: number }[];
-  /** True when the slot changed hands today and cannot change again. */
-  grantedToday: boolean;
-  /** Cold emails the holder has already sent today. */
+  /** Projects with suppliers still to write to, in the order they will send. */
+  queue: { id: string; name: string; position: number; pending: number }[];
+  /** Cold emails sent today, across every project. */
   sentToday: number;
+  /** What is left of today's allowance. */
+  remainingToday: number;
   maxPerDay: number;
   /** Hebrew, for the page. */
   summaryHe: string;
@@ -67,15 +61,13 @@ export async function maxColdPerDay(): Promise<number> {
  * answer, which is the same thing the pacing exists to control.
  */
 export async function coldSentToday(projectId?: string): Promise<number> {
-  const since = startOfToday();
-
   const rows = await db
     .select({ id: messages.id })
     .from(messages)
     .where(
       and(
         eq(messages.direction, "outbound"),
-        gte(messages.receivedAt, since),
+        gte(messages.receivedAt, startOfToday()),
         projectId ? eq(messages.projectId, projectId) : sql`true`,
         // Replies are the one kind that never counts.
         sql`${messages.outboundKind} is distinct from 'reply'`,
@@ -85,234 +77,88 @@ export async function coldSentToday(projectId?: string): Promise<number> {
   return rows.length;
 }
 
-/** Projects that still want the slot, oldest first. */
-async function waiting() {
-  return db
-    .select({ id: projects.id, name: projects.name })
-    .from(projects)
-    .where(
-      and(
-        isNull(projects.pausedAt),
-        isNull(projects.archivedAt),
-        isNull(projects.outreachStartedAt),
-      ),
-    )
-    .orderBy(asc(projects.createdAt));
-}
-
-/** Who holds the slot: started sending, has not finished. */
-async function holder() {
-  const [row] = await db
-    .select({ id: projects.id, name: projects.name })
-    .from(projects)
-    .where(
-      and(
-        isNull(projects.pausedAt),
-        isNull(projects.archivedAt),
-        isNotNull(projects.outreachStartedAt),
-        isNull(projects.outreachCompletedAt),
-      ),
-    )
-    .orderBy(asc(projects.outreachStartedAt))
-    .limit(1);
-
-  return row ?? null;
+/** What is left of today's allowance, across every project. */
+export async function remainingToday(): Promise<number> {
+  return Math.max(0, (await maxColdPerDay()) - (await coldSentToday()));
 }
 
 /**
- * Whether today's turn is already spent.
+ * Projects with suppliers still to write to, oldest first.
  *
- * The first version of this asked only whether a grant had been issued today,
- * and the test caught it immediately: a project granted the slot yesterday that
- * sends this morning and finishes at noon has issued no grant today, so the
- * next project was cleared to send another thirty this afternoon. Sixty in a
- * day, from a rule whose entire purpose was thirty.
- *
- * What matters is not when the slot was handed over but whether cold mail has
- * gone out today. That is measured from the messages, which is the thing the
- * limit is actually about. The grant check stays as well, for the case where a
- * project has taken the slot but not yet sent its first email - otherwise two
- * projects could both claim it in the same cycle.
+ * Oldest first is what makes the day drain one project at a time without
+ * anything having to enforce it: the front project takes what it needs, and
+ * only what is left over reaches the next one.
  */
-async function dayAlreadyUsed(): Promise<boolean> {
-  const granted = await db
-    .select({ startedAt: projects.outreachStartedAt })
+async function queue(): Promise<{ id: string; name: string; pending: number }[]> {
+  const live = await db
+    .select({ id: projects.id, name: projects.name })
     .from(projects)
-    .where(
-      and(isNotNull(projects.outreachStartedAt), gte(projects.outreachStartedAt, startOfToday())),
-    );
+    .where(and(isNull(projects.pausedAt), isNull(projects.archivedAt)))
+    .orderBy(asc(projects.createdAt));
 
-  if (granted.length > 0) return true;
-
-  return (await coldSentToday()) > 0;
+  const out: { id: string; name: string; pending: number }[] = [];
+  for (const project of live) {
+    const status = await campaignStatus(project.id);
+    if (status.pending.length > 0) {
+      out.push({ id: project.id, name: project.name, pending: status.pending.length });
+    }
+  }
+  return out;
 }
 
 export async function slotState(): Promise<SlotState> {
-  const [current, queued, granted, cap] = await Promise.all([
-    holder(),
-    waiting(),
-    dayAlreadyUsed(),
+  const [waiting, cap, sentToday] = await Promise.all([
+    queue(),
     maxColdPerDay(),
+    coldSentToday(),
   ]);
 
-  const sentToday = current ? await coldSentToday(current.id) : await coldSentToday();
-
-  const queue = queued.map((p, i) => ({ id: p.id, name: p.name, position: i + 1 }));
+  const remaining = Math.max(0, cap - sentToday);
+  const front = waiting[0] ?? null;
 
   let summaryHe: string;
-  if (current) {
-    summaryHe =
-      sentToday >= cap
-        ? `${current.name} שולח · הגיע למכסת היום (${sentToday}/${cap}). ממשיך מחר`
-        : `${current.name} שולח · ${sentToday}/${cap} היום`;
-  } else if (queue.length === 0) {
-    summaryHe = "אין פרויקט בשליחה. כל מה שפעיל כבר פנה לספקים שלו";
-  } else if (granted) {
-    summaryHe = `${queue.length} ממתינים · כבר יצאו פניות היום, הבא מתחיל מחר`;
+  if (waiting.length === 0) {
+    summaryHe = `אין ספקים שממתינים לפנייה · ${sentToday}/${cap} מיילים היום`;
+  } else if (remaining === 0) {
+    summaryHe = `מכסת היום מוצתה (${sentToday}/${cap}) · ${waiting.length} פרויקטים ממשיכים מחר`;
   } else {
-    const next = queue[0]!;
+    const totalPending = waiting.reduce((sum, p) => sum + p.pending, 0);
     summaryHe =
-      queue.length === 1
-        ? `${next.name} יתחיל לשלוח במחזור הקרוב`
-        : `${next.name} יתחיל לשלוח במחזור הקרוב · ${queue.length - 1} אחריו`;
+      `${sentToday}/${cap} מיילים היום · עוד ${remaining} ייצאו מ-${front!.name}` +
+      (waiting.length > 1 ? ` ואחריו ${waiting.length - 1} פרויקטים (${totalPending} ספקים בסך הכל)` : "");
   }
 
   return {
-    holderId: current?.id ?? null,
-    holderName: current?.name ?? null,
-    queue,
-    grantedToday: granted,
+    holderId: front?.id ?? null,
+    holderName: front?.name ?? null,
+    queue: waiting.map((p, i) => ({ ...p, position: i + 1 })),
     sentToday,
+    remainingToday: remaining,
     maxPerDay: cap,
     summaryHe,
   };
 }
 
 /**
- * The day this project's cold outreach actually begins.
+ * When this project's cold outreach next moves.
  *
- * Position in the queue is a number of days, not a place in a list: the slot
- * changes hands once a day, so second in line means the day after tomorrow.
- * Three separate parts of the page were each answering this for themselves and
- * giving three different answers on the same row - "starts tomorrow", "in about
- * 4 hours", and "in the coming cycles" - which is what a queue position looks
- * like when nothing owns the calculation.
+ * Today if the allowance still has room and nothing older is ahead of it;
+ * tomorrow otherwise. There is no longer a multi-day queue position to compute,
+ * because a project no longer occupies a whole day - it occupies as much of the
+ * day's thirty as it has suppliers for.
  */
 export async function turnStartsAt(projectId: string, now = new Date()): Promise<Date | null> {
-  const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
-  if (!project || project.pausedAt || project.archivedAt) return null;
-
   const decision = await mayStartOutreach(projectId);
   if (decision.may) return now;
 
   /*
-   * A project still searching has no date, and saying otherwise is worse than
-   * saying nothing: "first contact in 1 minute" next to "still searching" is
-   * the page contradicting itself again, and the confident half is the wrong
-   * half. The reason carries the information; the clock cannot.
+   * Only the daily cap has a knowable date. Waiting behind an older project
+   * could mean an hour or a week, depending on how fast its list drains - and
+   * "tomorrow" next to "will continue when their list runs out" is the page
+   * asserting something it cannot know. The reason carries it instead.
    */
-  if (decision.reason === "still searching") return null;
-
-  // Out of allowance but still holding the slot: it resumes at midnight.
-  if (project.outreachStartedAt && !project.outreachCompletedAt) {
-    return startOfTomorrow(now, 1);
-  }
-
-  const queue = await waiting();
-  const index = queue.findIndex((p) => p.id === projectId);
-  if (index === -1) return null;
-
-  const current = await holder();
-  const used = await dayAlreadyUsed();
-
-  /*
-   * Everyone ahead takes a day, and the holder takes one more if it is still
-   * sending. Days rather than hours: a project cannot start on the same day as
-   * the one before it, however early that one finished.
-   */
-  const daysAhead = index + (current ? 1 : 0) + (used && !current ? 1 : 0);
-  return startOfTomorrow(now, Math.max(daysAhead, used || current ? 1 : 0));
-}
-
-/** Midnight, `days` from now. Zero means today. */
-function startOfTomorrow(now: Date, days: number): Date {
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate() + days);
-}
-
-export interface Readiness {
-  ready: boolean;
-  usable: number;
-  target: number;
-  reasonHe: string;
-}
-
-/**
- * Has this project finished assembling its shortlist?
- *
- * The slot is one day per project, and a project that takes its day with
- * nineteen of thirty suppliers spends the day, sends nineteen, and then needs a
- * second day for the rest - pushing everything behind it back. Worse, the
- * queue looked like it was working: the page said "first contact to 16
- * suppliers" without ever mentioning that the search was still running.
- *
- * So the turn waits for the list. Bounded three ways, because some products
- * genuinely have twelve manufacturers: the target, the search angles running
- * out, or three days elapsed.
- */
-export async function shortlistReady(projectId: string): Promise<Readiness> {
-  const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
-  if (!project) {
-    return { ready: false, usable: 0, target: TARGET_LEADS, reasonHe: "הפרויקט לא נמצא" };
-  }
-
-  const leads = await db
-    .select({
-      email: supplierLeads.email,
-      status: supplierLeads.status,
-      matchScore: supplierLeads.matchScore,
-    })
-    .from(supplierLeads)
-    .where(eq(supplierLeads.projectId, projectId));
-
-  const usable = leads.filter(
-    (lead) =>
-      (lead.email !== null || lead.status === "contacted") &&
-      (lead.matchScore ?? 0) >= AUTO_APPROVE_SCORE &&
-      lead.status !== "rejected",
-  ).length;
-
-  if (usable >= TARGET_LEADS) {
-    return { ready: true, usable, target: TARGET_LEADS, reasonHe: "הרשימה מלאה" };
-  }
-
-  const roundsLeft = MAX_DISCOVERY_RUNS - (project.discoveryRuns ?? 0);
-  if (roundsLeft <= 0) {
-    return {
-      ready: true,
-      usable,
-      target: TARGET_LEADS,
-      reasonHe: `החיפוש מיצה את כל הזוויות ומצא ${usable}`,
-    };
-  }
-
-  const daysSearching = Math.floor(
-    (Date.now() - project.createdAt.getTime()) / 86_400_000,
-  );
-  if (daysSearching >= MAX_DAYS_SEARCHING) {
-    return {
-      ready: true,
-      usable,
-      target: TARGET_LEADS,
-      reasonHe: `${daysSearching} ימים בחיפוש - יוצא לדרך עם ${usable}`,
-    };
-  }
-
-  return {
-    ready: false,
-    usable,
-    target: TARGET_LEADS,
-    reasonHe: `עדיין מחפש - ${usable} מתוך ${TARGET_LEADS} ספקים ברי-פנייה, ${roundsLeft} זוויות חיפוש נותרו`,
-  };
+  if (decision.reason !== "daily cap") return null;
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
 }
 
 export type SlotDecision =
@@ -320,11 +166,12 @@ export type SlotDecision =
   | { may: false; reasonHe: string; reason: string };
 
 /**
- * May this project send cold email right now, and how much.
+ * May this project send cold email right now, and how many.
  *
- * Called before every campaign run. The answer is deliberately a number rather
- * than a yes, because the interesting case is the holder who has some of its
- * daily allowance left rather than none.
+ * Three questions, in order: is the project running, is there anything left of
+ * today's thirty, and is anything older still working through its list. The
+ * answer is a number rather than a yes, because the interesting case is a
+ * project that may send four more rather than none.
  */
 export async function mayStartOutreach(projectId: string): Promise<SlotDecision> {
   const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
@@ -335,86 +182,44 @@ export async function mayStartOutreach(projectId: string): Promise<SlotDecision>
   }
 
   const cap = await maxColdPerDay();
+  const sent = await coldSentToday();
+  const remaining = cap - sent;
 
-  // Already holds it: send whatever is left of today's allowance.
-  if (project.outreachStartedAt && !project.outreachCompletedAt) {
-    const sent = await coldSentToday(projectId);
-    const remaining = cap - sent;
-    return remaining > 0
-      ? { may: true, remaining }
-      : {
-          may: false,
-          reason: "daily cap",
-          reasonHe: `הגיע למכסת היום (${sent}/${cap}). ממשיך מחר`,
-        };
-  }
-
-  // Finished already - it answers replies, it does not send cold mail.
-  if (project.outreachCompletedAt) {
-    return { may: false, reason: "finished", reasonHe: "כל הספקים כבר קיבלו פנייה" };
-  }
-
-  // Wants the slot. Is anybody holding it?
-  const current = await holder();
-  if (current) {
+  if (remaining <= 0) {
     return {
       may: false,
-      reason: "slot taken",
-      reasonHe: `${current.name} באמצע שליחה. הפרויקט הזה מחכה לתורו`,
+      reason: "daily cap",
+      reasonHe: `מכסת היום מוצתה (${sent}/${cap}) · ממשיך מחר`,
     };
+  }
+
+  const waiting = await queue();
+  const mine = waiting.find((p) => p.id === projectId);
+  if (!mine) {
+    return { may: false, reason: "nothing to send", reasonHe: "אין ספקים שממתינים לפנייה" };
   }
 
   /*
-   * A project still assembling its shortlist does not hold up the queue.
+   * Anything older with suppliers still to write to goes first.
    *
-   * It also does not take its day early. One slot per project per day only
-   * means something if the project uses the day on a finished list - sending to
-   * nineteen of thirty and coming back tomorrow for the rest costs two days and
-   * pushes everything behind it back.
+   * Not a reservation - the older project takes only what it needs, and the
+   * moment its list runs out the rest of the day's allowance is available here.
+   * That is what "if it does not have thirty, start the next one" means in
+   * practice: the handover happens when the list empties, not when the day does.
    */
-  const readiness = await shortlistReady(projectId);
-  if (!readiness.ready) {
-    return { may: false, reason: "still searching", reasonHe: readiness.reasonHe };
-  }
-
-  const all = await waiting();
-  const readiness_ = await Promise.all(all.map((p) => shortlistReady(p.id)));
-  const queue = all.filter((_, i) => readiness_[i]!.ready);
-  const place = queue.findIndex((p) => p.id === projectId);
-
-  if (await dayAlreadyUsed()) {
-    /*
-     * "Tomorrow" is only true for whoever is at the front. Second in line is
-     * the day after, and saying otherwise on every queued project is how the
-     * page came to promise two of them the same day.
-     */
-    const days = place <= 0 ? 1 : place + 1;
-    const whenHe =
-      days === 1 ? "מתחיל מחר" : days === 2 ? "מתחיל מחרתיים" : `מתחיל בעוד ${days} ימים`;
-
+  const front = waiting[0]!;
+  if (front.id !== projectId) {
     return {
       may: false,
-      reason: "day already used",
-      reasonHe:
-        place <= 0
-          ? `כבר יצאו פניות היום מפרויקט אחר. ${whenHe}`
-          : `מקום ${place + 1} בתור · ${whenHe}`,
+      reason: "older project first",
+      reasonHe: `${front.name} לפניו בתור (${front.pending} ספקים) · ימשיך כשהרשימה שלו תיגמר`,
     };
   }
 
-  // Only the front of the queue may take it.
-  if (queue[0] && queue[0].id !== projectId) {
-    return {
-      may: false,
-      reason: "not first in queue",
-      reasonHe: `מקום ${place + 1} בתור · ${queue[0].name} לפניו`,
-    };
-  }
-
-  return { may: true, remaining: cap };
+  return { may: true, remaining };
 }
 
-/** Take the slot. Called once, when the first cold email of a project goes out. */
+/** Recorded for the history, not consulted for permission any more. */
 export async function claimSlot(projectId: string): Promise<void> {
   await db
     .update(projects)
@@ -422,23 +227,10 @@ export async function claimSlot(projectId: string): Promise<void> {
     .where(and(eq(projects.id, projectId), isNull(projects.outreachStartedAt)));
 }
 
-/**
- * Give the slot up, once everyone approved has been written to.
- *
- * The next project still waits for tomorrow - `grantedToday` sees the stamp
- * this project left behind. That is the point rather than a side effect: a
- * campaign that finishes at ten in the morning must not let a second one start
- * the same day.
- */
+/** Stamped when a project has written to everyone approved. */
 export async function releaseSlot(projectId: string): Promise<void> {
   await db
     .update(projects)
     .set({ outreachCompletedAt: new Date() })
-    .where(
-      and(
-        eq(projects.id, projectId),
-        isNotNull(projects.outreachStartedAt),
-        isNull(projects.outreachCompletedAt),
-      ),
-    );
+    .where(and(eq(projects.id, projectId), isNull(projects.outreachCompletedAt)));
 }
