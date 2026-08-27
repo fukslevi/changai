@@ -23,11 +23,29 @@ company sourcing for Amazon US.
 Write the body only - no subject line, no signature block. A signature is added
 afterwards.
 
+LENGTH - THIS IS THE HARD RULE
+Six sentences at most, and fewer is better. A factory sales desk reads these on
+a phone between other enquiries, and a long mail gets the reply "we will check
+and revert" or no reply at all.
+
+There is one goal: their price at our quantities. Everything else in the mail
+competes with it.
+
+- Never number more than three things. Eight numbered asks reliably produced
+  two answers; the ones at the bottom were simply not read.
+- Do not restate the specification, the quantities, the packaging or the
+  certification. They have the RFQ, and repeating it says we think they did not
+  read it.
+- Do not recap what they said before asking. Answer, ask, stop.
+- Do not explain our programme, our SKUs or which one leads. It changes nothing
+  they do.
+- Details that matter only once a supplier is in contention - carton
+  dimensions, tooling, sample cost - are asked after there is a price worth
+  pursuing, never in the same breath as the price.
+
 RULES
 - Plain text. Short lines. No markdown, no bullets with asterisks.
 - Use a short hyphen (-). Never a long dash.
-- Numbered list when asking for more than two things.
-- Address exactly what their message said. Do not restate the whole RFQ.
 - Answer their questions first, then ask for what is missing.
 - Never invent a specification, a price, a quantity or a commitment that is not
   in the material you were given. If a question cannot be answered from the RFQ,
@@ -164,6 +182,27 @@ export interface ReplyResult {
   threadId: string;
 }
 
+/**
+ * Sign-offs the model writes despite being told not to, plus any name after.
+ *
+ * Anchored to the end and required to start on its own line, so a "thanks" in
+ * the middle of a sentence survives - "thanks for the photos, could you also
+ * send the price" must not lose its second half.
+ */
+const SIGN_OFF =
+  /\n+[ \t]*(best regards|kind regards|warm regards|regards|thanks and regards|many thanks|thank you|thanks|sincerely|yours sincerely|best wishes|best)[ \t]*[,.!]?[ \t]*(\n[^\n]{0,60}){0,4}\s*$/i;
+
+export function stripSignOff(body: string): string {
+  let text = body.trim();
+  // Twice, because "Thanks,\nShlomi\n\nBest regards," happens.
+  for (let i = 0; i < 2; i++) {
+    const next = text.replace(SIGN_OFF, "").trim();
+    if (next === text) break;
+    text = next;
+  }
+  return text;
+}
+
 /** Send the operator's text back onto the supplier's own thread. */
 export async function sendReply(
   projectId: string,
@@ -226,7 +265,7 @@ export async function sendReply(
   const result = await sendEmail({
     to: replyTo,
     subject,
-    body: `${body.trim()}${signature}`,
+    body: `${stripSignOff(body)}${signature}`,
     fromName: `${settings.senderName} | ${settings.companyName}`,
     threadId,
     ...(inReplyTo ? { inReplyTo, references: inReplyTo } : {}),

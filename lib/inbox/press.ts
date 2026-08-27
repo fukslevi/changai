@@ -176,9 +176,10 @@ Do not:
 - Promise an order, a date, a sample or a volume.
 - Apologise for asking again.
 
-Style: plain text, short lines, no markdown, short hyphen (-) never a long dash,
-four short paragraphs at most. No greeting line beyond their name, no signature -
-one is appended afterwards.`;
+Style: plain text, short lines, no markdown, short hyphen (-) never a long dash.
+Six sentences at most - a factory sales desk reads this on a phone between other
+enquiries, and a long mail gets "we will check and revert" or nothing. No
+greeting beyond their name, no signature - one is appended afterwards.`;
 
 async function draftAsk(
   productName: string,

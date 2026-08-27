@@ -26,15 +26,25 @@ const SECTION_ORDER: { categories: Requirement["category"][]; heading: string }[
   { categories: ["certification"], heading: "CERTIFICATION" },
 ];
 
+/**
+ * Four asks, not eight, and the order is the measured one.
+ *
+ * Across eleven quotations that actually carried a price, this is what came
+ * back: unit price 100%, incoterm 82%, payment terms 55%, lead time 45%, MOQ
+ * 27%, certificates 27%, units per carton 18%, tooling 9%, carton dimensions
+ * 9%, sample price 0%. Asking for eight things reliably produced two.
+ *
+ * A long list does not gather more, it buries what matters - and the buried
+ * item was the sample price, requested of every supplier and supplied by none.
+ * Carton dimensions and tooling do matter, but only for a factory still in
+ * contention, and they can be asked once there is a price worth pursuing.
+ * Asking all thirty up front costs the price we actually wanted.
+ */
 const ASKS = [
-  "Unit price at each of the quantities above (FOB)",
+  "Unit price at each quantity, FOB",
   "MOQ",
-  "Production lead time in days",
+  "Lead time",
   "Payment terms",
-  "Sample price and sample lead time",
-  "Certificates you already hold",
-  "Photos of the actual product you would produce",
-  "Tooling or mould cost, if any",
 ];
 
 function formatQty(tiers: number[]): string {
@@ -61,8 +71,8 @@ export function buildOutreachEmail(
 
   lines.push(`Hello ${COMPANY_PLACEHOLDER},`, "");
   lines.push(
-    "We are SoSimple, an e-commerce brand selling on Amazon US. We are sourcing",
-    "the product below and would like your quotation.",
+    "We are SoSimple, an Amazon US brand. We would like your quotation for the",
+    "product below.",
     "",
   );
 
@@ -135,14 +145,14 @@ export function buildOutreachEmail(
   }
 
   /* The ask ---------------------------------------------------------------- */
-  lines.push("YOUR QUOTATION MUST INCLUDE");
+  lines.push("PLEASE SEND");
   ASKS.forEach((ask, i) => lines.push(`  ${i + 1}. ${ask}`));
   lines.push("");
 
   /* An explicit out raises reply rate and cuts pointless follow-up. */
   lines.push(
-    "If this product is outside what you manufacture, simply reply and say so -",
-    "we will not follow up.",
+    "If you do not make this product, just reply and say so - we will not follow",
+    "up.",
     "",
     "Best regards,",
     sender.name,
