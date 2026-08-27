@@ -625,7 +625,7 @@ export const quoteReadings = pgTable(
           qty: number | null;
           unit_price: number | null;
           spec_note: string | null;
-          /** Which RFQ product this prices, by our name. Null for accessories. */
+          /** Which RFQ product this prices, by our name. Empty for accessories. */
           matches_rfq_item?: string | null;
         }[]
       >()

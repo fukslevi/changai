@@ -6,6 +6,10 @@
       "schedule": "0 3 * * *"
     },
     {
+      "path": "/api/cron/send",
+      "schedule": "5 3 * * *"
+    },
+    {
       "path": "/api/cron/notify",
       "schedule": "10 3 * * *"
     }
@@ -13,6 +17,9 @@
   "functions": {
     "app/api/cron/notify/route.ts": {
       "maxDuration": 120
+    },
+    "app/api/cron/send/route.ts": {
+      "maxDuration": 300
     },
     "app/api/cron/route.ts": {
       "maxDuration": 300

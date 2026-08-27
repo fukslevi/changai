@@ -44,11 +44,20 @@ export const ExtractedQuote = z.object({
          * there. It is a judgement about what the thing is, made here where
          * the specification and their message are both in view.
          *
-         * Null when the line is an accessory, a sample, a tooling charge or
-         * anything else we did not ask to be priced. Null is the right answer
+         * Empty when the line is an accessory, a sample, a tooling charge or
+         * anything else we did not ask to be priced. Empty is the right answer
          * far more often than a guess is.
+         *
+         * A plain string rather than a nullable one, and that is not a style
+         * choice. The API refuses a schema with more than sixteen union-typed
+         * parameters, and adding this as `.nullable()` made seventeen - so
+         * every extraction failed the moment it was introduced, quietly, into
+         * an errors array nobody was reading. Three projects took replies
+         * containing prices and produced no quotes at all.
+         *
+         * Empty string carries the same meaning at no schema cost.
          */
-        matches_rfq_item: z.string().nullable().default(null),
+        matches_rfq_item: z.string().default(""),
         /** Null when the price is flat across volumes. */
         qty: z.number().int().positive().nullable(),
         unit_price: z.number().nullable(),

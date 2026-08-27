@@ -161,6 +161,7 @@ export async function buildComparison(projectId: string): Promise<Comparison> {
   /** Which of our products a line prices, independent of quantity. */
   function matchedItemFor(lineName: string, declaredItem?: string | null): string | null {
     if (targetsByItem.size === 0) return null;
+    // Empty means the extractor decided it is not one of our products.
     if (declaredItem && targetsByItem.has(declaredItem)) return declaredItem;
 
     const haystack = normalise(lineName);
@@ -183,7 +184,7 @@ export async function buildComparison(projectId: string): Promise<Comparison> {
     qty: number | null,
     declaredItem?: string | null,
   ): number | null {
-    if (qty === null || targetsByItem.size === 0) return null;
+    if (targetsByItem.size === 0) return null;
 
     /*
      * The extractor's own answer wins when it gave one. It made the judgement
@@ -195,9 +196,23 @@ export async function buildComparison(projectId: string): Promise<Comparison> {
      * The matching below stays for readings taken before the extractor was
      * asked the question.
      */
+    /*
+     * A flat price still gets compared.
+     *
+     * Some factories quote one figure and no tiers - Huizhou Deding priced six
+     * kettlebell weights with no quantity at all - and requiring a quantity
+     * meant a real price for a real product produced no gap and never reached
+     * the table. The smallest tier is the fair comparison for a single figure:
+     * it is the price we would pay at the quantity where we have least leverage.
+     */
+    const pick = (byQty: Map<number, number>) =>
+      qty !== null
+        ? (byQty.get(qty) ?? null)
+        : (byQty.get(Math.min(...byQty.keys())) ?? null);
+
     if (declaredItem) {
       const exact = targetsByItem.get(declaredItem);
-      if (exact) return exact.get(qty) ?? null;
+      if (exact) return pick(exact);
     }
 
     const haystack = normalise(lineName);
@@ -216,7 +231,8 @@ export async function buildComparison(projectId: string): Promise<Comparison> {
       bestName = [...targetsByItem.keys()][0]!;
     }
 
-    return targetsByItem.get(bestName)?.get(qty) ?? null;
+    const byQty = targetsByItem.get(bestName);
+    return byQty ? pick(byQty) : null;
   }
 
   /*

@@ -37,6 +37,25 @@ jobs:
             exit 1
           fi
 
+      # Sending gets its own call, and runs whatever happened above. It used to
+      # sit at the end of the cycle loop, where five projects polling a mailbox
+      # spent the budget before the loop reached the one with suppliers to write
+      # to - a run with permission to send nineteen sent two, and the day's
+      # allowance expired unused. An allowance that expires does not come back.
+      - name: Send outreach
+        if: always()
+        run: |
+          response=$(curl -sS --max-time 310 -w "\n%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.APP_URL }}/api/cron/send")
+          body=$(echo "$response" | head -n -1)
+          code=$(echo "$response" | tail -n 1)
+          echo "$body"
+          if [ "$code" != "200" ]; then
+            echo "::error::send returned $code"
+            exit 1
+          fi
+
       # Always, even if the cycle above failed or timed out. What it announces
       # is whatever is in the database now, and a cycle that fell over is a
       # cycle whose open questions are still open. This used to run at the end

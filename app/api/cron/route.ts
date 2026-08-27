@@ -4,7 +4,6 @@ import { db, projects } from "@/lib/db";
 import { runAutopilot, triageAndPark, withinSendingHours, withinSupplierHours } from "@/lib/inbox/autopilot";
 import { runFollowUps } from "@/lib/inbox/followup";
 import { pressForPrice } from "@/lib/inbox/press";
-import { runCampaign } from "@/lib/outreach/campaign";
 import { markCycleRun } from "@/lib/settings";
 import { pollInbox } from "@/lib/inbox/run";
 import { authorised } from "./auth";
@@ -21,10 +20,12 @@ import { authorised } from "./auth";
  * business hours, so the queue is always current when someone opens the page
  * while nothing lands in a supplier's inbox at three in the morning.
  *
- * Announcements are not here. They live at /api/cron/notify, called straight
- * after this one, because when this route overran the alert was the first
- * thing dropped - and an alert that never arrives is the one failure that
- * makes an unwatched project unusable.
+ * Sending is not here either, and neither are the announcements. Both live on
+ * their own routes - /api/cron/send and /api/cron/notify - because both were
+ * starved when they sat at the end of this loop. Five projects each poll a
+ * mailbox before the loop reaches the one with suppliers to write to, and a run
+ * with permission to send nineteen sent two. Reading the mailbox two hours late
+ * costs two hours; an allowance that expires unused does not come back.
  *
  * Two schedules can drive this and they are deliberately unequal. Vercel's own
  * cron is capped at once a day on the Hobby plan, so it is set to 03:00 UTC -
@@ -108,32 +109,6 @@ export async function GET(request: Request) {
       // First contact goes out on the same schedule as everything else. A
       // project that is ready to write to suppliers and simply waits is not
       // autonomous, whatever the setting says.
-      /*
-       * A campaign that throws must not take the project's whole cycle with
-       * it. Ceiling Curtain Track threw "no saved email" on every run, and
-       * because the throw escaped to the per-project catch, the inbox poll and
-       * triage that had already succeeded were reported as one flat error - and
-       * everything after the campaign, including the search, never ran.
-       */
-      let campaign: Awaited<ReturnType<typeof runCampaign>>;
-      try {
-        campaign = await runCampaign(project.id, { deadline });
-      } catch (err) {
-        campaign = {
-          sent: [],
-          failed: [],
-          remaining: 0,
-          skipped: `שגיאה בשליחה: ${err instanceof Error ? err.message : String(err)}`,
-        };
-      }
-
-      // Stamped on the way out, so a project that threw still moves down the
-      // queue - otherwise one broken project blocks the rotation permanently.
-      await db
-        .update(projects)
-        .set({ lastCycledAt: new Date() })
-        .where(eq(projects.id, project.id));
-
       summary.push({
         project: project.name,
         newMessages: inbox.newMessages,
@@ -143,9 +118,6 @@ export async function GET(request: Request) {
         chased: chases.chased.length,
         pricesAsked: pressed.asked.length,
         closed: chases.closed.length,
-        firstContacts: campaign.sent.length,
-        stillToContact: campaign.remaining,
-        campaignSkipped: campaign.skipped,
         errors: inbox.errors,
       });
     } catch (err) {
