@@ -307,6 +307,34 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       <Autostart projectId={project.id} pending={setupPending} />
 
       {/*
+        A project with no RFQ document cannot send anything, and until now said
+        so nowhere. Electric Lunch Box sat with 45 leads and 32 of them approved
+        - every number on the page rising - while the one thing that turns a
+        lead into an email had never been uploaded. The setup banner above does
+        not cover it, because it only runs once a document exists.
+      */}
+      {!project.sourceRfqFile && (
+        <section
+          className="card stack"
+          dir="rtl"
+          style={{ gap: 6, borderColor: "var(--warn)" }}
+        >
+          <h2 style={{ margin: 0, fontSize: 16, color: "var(--warn)" }}>
+            לא הועלה מסמך RFQ
+          </h2>
+          <p style={{ margin: 0, fontSize: 13.5 }}>
+            בלי המסמך אי אפשר לייצר את מייל הפנייה, ולכן לא יישלח דבר - גם אם
+            נמצאו ספקים והם אושרו. חיפוש הספקים ממשיך לרוץ ברקע, אבל התור לא
+            יתקדם עד שהקובץ יעלה.
+          </p>
+          <p style={{ margin: 0, fontSize: 13.5 }}>
+            העלה את קובץ ה-RFQ באזור הקבצים למטה. מיד לאחר מכן המערכת תפרק אותו
+            לפריטים, תכתוב את המייל ותתחיל לפנות לספקים המאושרים.
+          </p>
+        </section>
+      )}
+
+      {/*
         Above the table, because it answers the question asked on arrival.
         "Last reply 7 hours ago" reads as broken; "replying to 3 suppliers in
         about 6 hours, because it is 2am in China" reads as working.
