@@ -102,10 +102,31 @@ export async function GET(request: Request) {
 
     try {
       const inbox = await pollInbox(project.id);
+
+      /*
+       * The deadline goes into the triage rather than only around it.
+       *
+       * Checking it between projects bounds how many projects start, not how
+       * long one takes, and one project with a dozen unread replies is a dozen
+       * model calls. That is what pushed this route past 300s twice on 28.08:
+       * curl got nothing back, the run was recorded as a failure, and the
+       * mailbox went unread for most of a day while sending - a separate step
+       * with `if: always()` - carried on and hid it.
+       */
       const work = canReply
-        ? await runAutopilot(project.id)
-        : await triageAndPark(project.id);
-      const chases = await runFollowUps(project.id, { send: canReply });
+        ? await runAutopilot(project.id, { deadline })
+        : await triageAndPark(project.id, { deadline });
+
+      /*
+       * Chases are skipped once the clock is out, not squeezed in. A chase is
+       * by definition not urgent - it exists because nobody replied - and the
+       * rotation is by lastCycledAt, so the project that loses its chase this
+       * run sorts first on the next one.
+       */
+      const chases =
+        Date.now() > deadline
+          ? { chased: [], closed: [] }
+          : await runFollowUps(project.id, { send: canReply });
 
       /*
        * Stamped on the way out, so a project that threw still moves down the

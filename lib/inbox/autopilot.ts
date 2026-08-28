@@ -343,7 +343,7 @@ export interface AutopilotResult {
  */
 export async function runAutopilot(
   projectId: string,
-  options: { send?: boolean } = {},
+  options: { send?: boolean; deadline?: number } = {},
 ): Promise<AutopilotResult> {
   // Parking a question changes nothing outside the building, so it happens on
   // every pass. Sending is the step that needs an explicit act, and it is the
@@ -415,6 +415,21 @@ export async function runAutopilot(
   }
 
   for (const message of latestPerSupplier.values()) {
+    /*
+     * Stop on the caller's clock rather than running to the end of the list.
+     *
+     * Every message here costs a classification and usually a drafted reply,
+     * so a project with a dozen unread replies is minutes of model calls - and
+     * the cycle route could only check its deadline between projects, so one
+     * busy project pushed the whole request past the platform's 300s limit and
+     * it returned nothing at all. Two scheduled runs died that way before
+     * anyone noticed, because sending runs as a separate step and kept working.
+     *
+     * Breaking is safe: an unhandled message still has handled_at null, so the
+     * next cycle finds it exactly where this one left it. Partial work that is
+     * recorded beats complete work that is thrown away at the timeout.
+     */
+    if (options.deadline && Date.now() > options.deadline) break;
     if (!message.supplierId) continue;
     if (takenOver.has(message.supplierId)) continue;
     const company = message.company ?? "ספק";
@@ -533,8 +548,11 @@ export async function runAutopilot(
  * Safe to run on every inbox check, and it should be: the questions have to be
  * in front of the operator before anybody wonders why a thread went quiet.
  */
-export async function triageAndPark(projectId: string): Promise<AutopilotResult> {
-  return runAutopilot(projectId, { send: false });
+export async function triageAndPark(
+  projectId: string,
+  options: { deadline?: number } = {},
+): Promise<AutopilotResult> {
+  return runAutopilot(projectId, { send: false, deadline: options.deadline });
 }
 
 /**
