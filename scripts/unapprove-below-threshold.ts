@@ -10,6 +10,9 @@
  * is right for anyone already contacted - the mail has gone - and wrong for a
  * project that has not started, which is the case the threshold exists for.
  *
+ * A lead that has been written to is already "contacted", not "approved", so
+ * the queue this touches is by definition nobody who has heard from us.
+ *
  * Leads go back to "pending", not "rejected": they stay visible on the project
  * page and can be approved by hand, and nothing is destroyed. Anyone already
  * contacted is left alone.
@@ -36,9 +39,13 @@ async function main() {
         and(eq(supplierLeads.projectId, project.id), eq(supplierLeads.status, "approved")),
       );
 
-    const low = approved.filter(
-      (lead) => !lead.contactedAt && (lead.matchScore ?? 0) < AUTO_APPROVE_SCORE,
-    );
+    /*
+     * "approved" already means nobody has written to them: sending flips the
+     * lead to "contacted". There is no separate sent-at column to check, and
+     * checking one that does not exist reads as false in JavaScript and lets
+     * everything through - which is the wrong direction to be wrong in.
+     */
+    const low = approved.filter((lead) => (lead.matchScore ?? 0) < AUTO_APPROVE_SCORE);
     if (low.length === 0) {
       console.log(`${project.name}: nothing to do`);
       continue;
