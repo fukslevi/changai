@@ -102,7 +102,13 @@ export async function GET(request: Request) {
     }
 
     try {
-      const inbox = await pollInbox(project.id);
+      /*
+       * The poll gets the deadline too, and it is the one that most needed it:
+       * reading one project's threads was measured at 321s, which is longer
+       * than this function is allowed to run, and it happens before any other
+       * phase gets a turn.
+       */
+      const inbox = await pollInbox(project.id, { deadline });
 
       /*
        * The deadline goes into the triage rather than only around it.

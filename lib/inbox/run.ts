@@ -24,7 +24,7 @@ import { analyseReply } from "./classify";
 import { findStrayReplies } from "./sweep";
 import { attachmentBlocks } from "../quotes/context";
 import { extractQuote } from "../quotes/extract";
-import { downloadAttachment, inboundOnThread } from "./fetch";
+import { downloadAttachment, inboundOnThread, type InboundMessage } from "./fetch";
 
 export interface InboxResult {
   threadsChecked: number;
@@ -41,7 +41,10 @@ export interface InboxResult {
 /** Gmail counts a size limit per attachment; a quote deck above this is unusual. */
 const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024;
 
-export async function pollInbox(projectId: string): Promise<InboxResult> {
+export async function pollInbox(
+  projectId: string,
+  options: { deadline?: number } = {},
+): Promise<InboxResult> {
   const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
   if (!project) throw new Error("Project not found");
 
@@ -144,19 +147,55 @@ export async function pollInbox(projectId: string): Promise<InboxResult> {
     })),
   ];
 
+  /*
+   * Read the threads in parallel, then process what came back one at a time.
+   *
+   * This walk was thirty-three sequential Gmail round trips for one project and
+   * took 321 seconds - longer than the whole function is allowed to live, and
+   * it runs before anything that watches a clock. That is the real reason the
+   * scheduled cycle timed out twice on 28.08.
+   *
+   * A deadline alone could not fix it. The walk is in a fixed order, so a poll
+   * that always ran out halfway would re-read the same early threads forever
+   * and never reach the later ones - the mailbox would look polled while some
+   * suppliers were permanently invisible.
+   *
+   * The split is deliberate: fetching is network-bound and has no side effects,
+   * so it parallelises safely, while the processing below writes files, calls
+   * the model and inserts messages, and stays sequential. Six at a time is well
+   * inside Gmail's per-user limits and turns thirty-three trips into six.
+   */
+  const FETCH_CONCURRENCY = 6;
+  const fetched = new Map<string, InboundMessage[]>();
+  const queue = walk.filter((t): t is typeof t & { threadId: string } => Boolean(t.threadId));
+
+  for (let i = 0; i < queue.length; i += FETCH_CONCURRENCY) {
+    if (options.deadline && Date.now() > options.deadline) break;
+    await Promise.all(
+      queue.slice(i, i + FETCH_CONCURRENCY).map(async (thread) => {
+        try {
+          fetched.set(thread.threadId, await inboundOnThread(thread.threadId, mailbox));
+        } catch (err) {
+          result.errors.push(
+            `thread ${thread.threadId}: ${err instanceof Error ? err.message : err}`,
+          );
+        }
+      }),
+    );
+  }
+
   for (const thread of walk) {
     if (!thread.threadId) continue;
+    const inbound = fetched.get(thread.threadId);
+    if (!inbound) continue;
     result.threadsChecked++;
 
-    let inbound;
-    try {
-      inbound = await inboundOnThread(thread.threadId, mailbox);
-    } catch (err) {
-      result.errors.push(
-        `thread ${thread.threadId}: ${err instanceof Error ? err.message : err}`,
-      );
-      continue;
-    }
+    /*
+     * Classifying a reply is a model call, so a project with a full mailbox is
+     * minutes of work here. Stopping leaves the message unstored, which is the
+     * safe direction: nothing is marked seen, so the next poll finds it.
+     */
+    if (options.deadline && Date.now() > options.deadline) break;
 
     for (const message of inbound) {
       if (seen.has(message.gmailMessageId)) continue;
