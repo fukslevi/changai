@@ -248,3 +248,88 @@ export async function bounceRate(): Promise<BounceHealth> {
     deadAddresses: new Set(permanent.map((b) => b.recipient)).size,
   };
 }
+
+/**
+ * An auto-reply that names somebody else is a working address we were given.
+ *
+ * Forest Drapery answered twice with autoresponders - maternity leave, then
+ * out of office - and the first one said "please contact sales@forestdh.com".
+ * Nothing read it. The supplier told us exactly where to write and we filed it
+ * as an irrelevant message and moved on.
+ *
+ * Only addresses on the same domain are taken. An auto-reply can name anyone -
+ * a personal account, a customer, a competitor - and writing to a stranger
+ * because a robot mentioned them is worse than missing the redirect.
+ *
+ * That rule immediately earned itself on the case this was written for. Forest
+ * Group's out-of-office named sales@forestdh.com, a different company that we
+ * already hold as a separate supplier at exactly that address, so the redirect
+ * was both wrong to follow and unnecessary. It finds nothing today; it stays as
+ * a check rather than wired into the cycle, because a colleague's address at
+ * the same company is a real pattern and this is where it will be caught.
+ */
+export interface Redirect {
+  supplierId: string;
+  company: string;
+  from: string;
+  to: string;
+}
+
+/**
+ * Only auto-replies, because ordinary replies are already handled.
+ *
+ * A reply is answered at the address it came from, so a salesperson signing
+ * with a different mailbox changes nothing - the first version of this flagged
+ * five of those and none of them were a problem. What is worth catching is the
+ * message nobody is reading: an out-of-office that names a colleague, where
+ * answering the sender reaches an empty desk.
+ */
+const AUTO_REPLY =
+  /out of (the )?office|auto[- ]?reply|automatic reply|on (annual |maternity |sick )?leave|away from my desk|currently unavailable|will return on/i;
+
+const REDIRECT_PHRASE =
+  /(contact|email|write to|reach|forward|send.*to|in my absence|urgent)/i;
+
+export async function findRedirects(projectId: string): Promise<Redirect[]> {
+  const rows = await db
+    .select({
+      supplierId: messages.supplierId,
+      company: suppliers.companyName,
+      current: suppliers.email,
+      from: messages.fromAddress,
+      body: messages.bodyText,
+      classification: messages.classification,
+    })
+    .from(messages)
+    .leftJoin(suppliers, eq(messages.supplierId, suppliers.id))
+    .where(and(eq(messages.projectId, projectId), eq(messages.direction, "inbound")));
+
+  const out = new Map<string, Redirect>();
+
+  for (const row of rows) {
+    if (!row.supplierId || !row.current) continue;
+
+    const body = row.body ?? "";
+    if (!AUTO_REPLY.test(body)) continue;
+    if (!REDIRECT_PHRASE.test(body)) continue;
+
+    const domain = row.current.split("@")[1]?.toLowerCase();
+    if (!domain) continue;
+
+    for (const match of body.matchAll(/([\w.+-]+@[\w.-]+\.[a-z]{2,})/gi)) {
+      const candidate = match[1]!.toLowerCase();
+      if (candidate === row.current.toLowerCase()) continue;
+      if (candidate.split("@")[1] !== domain) continue;
+
+      out.set(row.supplierId, {
+        supplierId: row.supplierId,
+        company: row.company ?? domain,
+        from: row.current,
+        to: candidate,
+      });
+      break;
+    }
+  }
+
+  return [...out.values()];
+}

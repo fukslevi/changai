@@ -41,7 +41,7 @@ const SECTION_ORDER: { categories: Requirement["category"][]; heading: string }[
  * Asking all thirty up front costs the price we actually wanted.
  */
 const ASKS = [
-  "Unit price at each quantity, FOB",
+  "Unit price at each quantity (FOB or EXW - say which)",
   "MOQ",
   "Lead time",
   "Payment terms",
@@ -122,8 +122,25 @@ export function buildOutreachEmail(
 
   /* Quantities ------------------------------------------------------------- */
   if (tiers.length > 0) {
-    lines.push(`QUANTITIES - please quote all ${tiers.length}, FOB China, in ${project.currency}`);
+    /*
+     * FOB preferred, EXW accepted - and the difference is a quote we lost.
+     *
+     * Junpai Sun Shading answered with MOQ, lead time, payment terms, sample
+     * price and their SGS certificate, and no price: "for order less than full
+     * container order, our price terms is ex-work". A factory that only sells
+     * FOB on full containers cannot price an LCL enquiry at all, so insisting
+     * on FOB turned a supplier who had done all the work into a blank.
+     *
+     * Saying we accept EXW costs nothing - the freight is ours to arrange
+     * either way - and removes the only reason that supplier had to stop.
+     */
+    lines.push(`QUANTITIES - please quote all ${tiers.length}, in ${project.currency}`);
     lines.push(`  ${formatQty(tiers)}`, "");
+    lines.push(
+      "FOB China preferred. If you only quote EXW for orders below a full",
+      "container, send EXW - we arrange collection in China.",
+      "",
+    );
   }
 
   /* Quality issues get their own section, above the routine requirements -
@@ -141,6 +158,19 @@ export function buildOutreachEmail(
     if (matching.length === 0) continue;
     lines.push(section.heading);
     for (const r of matching) lines.push(`  • ${clean(r.text)}`);
+
+    /*
+     * A certificate a factory does not yet hold is a cost they have to price
+     * before they can price anything, and several stopped there rather than
+     * come back with a number. Asking for both prices lets them answer without
+     * committing to the certification first.
+     */
+    if (section.heading === "CERTIFICATION") {
+      lines.push(
+        "  • If you do not hold these yet, quote both ways - your price with",
+        "    certification and without - rather than not quoting.",
+      );
+    }
     lines.push("");
   }
 
