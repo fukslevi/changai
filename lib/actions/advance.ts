@@ -3,7 +3,7 @@
 import { asc, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db, items, projects, requirements, supplierLeads } from "../db";
-import { runDiscovery } from "../discovery/run";
+import { AUTO_APPROVE_SCORE, runDiscovery } from "../discovery/run";
 import { buildOutreachEmail } from "../outreach/template";
 import { getSettings } from "../settings";
 import { approveAllAbove } from "./discovery";
@@ -122,7 +122,7 @@ export async function advanceProject(
       if (project && project.autonomyTier >= 3) {
         const data = new FormData();
         data.set("projectId", projectId);
-        data.set("threshold", "30");
+        data.set("threshold", String(AUTO_APPROVE_SCORE));
         await approveAllAbove({}, data);
       }
     }

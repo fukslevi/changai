@@ -25,11 +25,21 @@ export const MIN_SCORE_TO_STORE = 20;
 /**
  * The score at which a lead is written to without anyone looking.
  *
+ * Raised from 30 to 45 on evidence. Nineteen per cent of everyone contacted
+ * scored under 45, and reading who they were explains the quote rate: a smart
+ * ring manufacturer, a US drapery distributor, FlexiSpot customer service, a
+ * fibreglass-only mill. They reply - politely, to say no - which inflates the
+ * count of suppliers who answered and can never add to the count who quoted.
+ *
+ * The bar costs reach and buys a denominator that means something. Discovery
+ * simply keeps looking to refill the shortlist, which it now does until it
+ * stops finding anybody rather than until a counter runs out.
+ *
  * Shared with the auto-approval step on purpose: the target is a number of
  * outreaches, so the only leads that count towards it are the ones that will
  * actually become one.
  */
-export const AUTO_APPROVE_SCORE = 30;
+export const AUTO_APPROVE_SCORE = 45;
 
 /**
  * How many usable leads a project should end up with.

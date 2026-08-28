@@ -94,14 +94,30 @@ export function buildOutreachEmail(
   const main = ranked[0];
   const unattached = bundled.filter((b) => !b.parentItemId);
 
+  /*
+   * The parts are listed separately, and quoting some of them is allowed.
+   *
+   * Presented as one kit, a single component disqualifies the whole enquiry:
+   * Baopeng manufacture soft kettlebells and declined the entire RFQ because
+   * "the Soft Kettlebell with an electronic reps counter is outside our current
+   * manufacturing scope". A weights factory was lost over a piece of
+   * electronics we would happily buy elsewhere.
+   *
+   * So the kit is named, its parts are itemised, and the mail says plainly that
+   * a partial quote is welcome. Nothing about what we want changes - only
+   * whether a factory has to be able to make all of it before it may answer.
+   */
   lines.push("PRODUCT");
   if (main) {
     const children = [...(childrenOf.get(main.id) ?? []), ...unattached];
-    const kit =
-      children.length > 0
-        ? ` Supplied as a kit with ${listPhrase(children.map((c) => stripParent(c.name, main.name)))}.`
-        : "";
-    lines.push(`${main.name}.${kit}`);
+    lines.push(`${main.name}.`);
+
+    if (children.length > 0) {
+      lines.push("", "Supplied as a kit with:");
+      for (const child of children) {
+        lines.push(`  • ${stripParent(child.name, main.name)}`);
+      }
+    }
   }
   for (const extra of ranked.slice(1)) {
     const children = childrenOf.get(extra.id) ?? [];
@@ -115,7 +131,23 @@ export function buildOutreachEmail(
   }
   if (optional.length > 0) {
     lines.push(
+      "",
       `Optional, price separately if available: ${listPhrase(optional.map((o) => o.name))}.`,
+    );
+  }
+
+  // The line that lets a capable factory answer instead of declining.
+  const hasParts = bundled.length > 0 || optional.length > 0 || ranked.length > 1;
+  if (hasParts) {
+    /*
+     * "Leave out", not "price at zero". The first draft of this line invited a
+     * zero, and a zero is a price - it would land in the comparison as a line
+     * infinitely below target and take the top of the table with it.
+     */
+    lines.push(
+      "",
+      "You do not need to make every part. Quote the items you manufacture and",
+      "leave the others out - we source those separately.",
     );
   }
   lines.push("");

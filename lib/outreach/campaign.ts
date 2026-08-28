@@ -9,7 +9,7 @@
  */
 import { eq } from "drizzle-orm";
 import { db, projects, supplierLeads } from "../db";
-import { reenrichMissing, runDiscovery, searchState } from "../discovery/run";
+import { AUTO_APPROVE_SCORE, reenrichMissing, runDiscovery, searchState } from "../discovery/run";
 import { approveAllAbove } from "../actions/discovery";
 import { campaignStatus, prepareCampaign, sendNext } from "./batch";
 import { buildOutreachEmail } from "./template";
@@ -114,7 +114,7 @@ export async function runCampaign(
    */
   const approval = new FormData();
   approval.set("projectId", projectId);
-  approval.set("threshold", "30");
+  approval.set("threshold", String(AUTO_APPROVE_SCORE));
   await approveAllAbove({}, approval);
 
   const status = await campaignStatus(projectId);
