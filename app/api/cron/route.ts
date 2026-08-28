@@ -5,6 +5,7 @@ import { runAutopilot, triageAndPark, withinSendingHours, withinSupplierHours } 
 import { runFollowUps } from "@/lib/inbox/followup";
 import { markCycleRun } from "@/lib/settings";
 import { pollInbox } from "@/lib/inbox/run";
+import { noteApiError } from "@/lib/health/credit";
 import { authorised } from "./auth";
 
 /**
@@ -137,6 +138,13 @@ export async function GET(request: Request) {
         .set({ lastCycledAt: new Date() })
         .where(eq(projects.id, project.id));
 
+      /*
+       * An empty API balance surfaces here first, as a string inside this
+       * array, and a string inside an array is not a warning anyone sees. It
+       * is recorded so the front page can be red about it.
+       */
+      for (const message of inbox.errors) await noteApiError(message);
+
       summary.push({
         project: project.name,
         newMessages: inbox.newMessages,
@@ -148,6 +156,8 @@ export async function GET(request: Request) {
         errors: inbox.errors,
       });
     } catch (err) {
+      await noteApiError(err);
+
       await db
         .update(projects)
         .set({ lastCycledAt: new Date() })

@@ -4,6 +4,7 @@ import { db, projects } from "@/lib/db";
 import { withinSupplierHours } from "@/lib/inbox/autopilot";
 import { pressForPrice } from "@/lib/inbox/press";
 import { runCampaign } from "@/lib/outreach/campaign";
+import { noteApiError } from "@/lib/health/credit";
 import { authorised } from "../auth";
 
 /**
@@ -70,6 +71,10 @@ export async function GET(request: Request) {
         skipped: run.skipped,
       });
     } catch (err) {
+      // Price-asking is drafted by the model, so this is a place an empty
+      // balance shows up while cold sending carries on unaffected.
+      await noteApiError(err);
+
       summary.push({
         project: project.name,
         error: err instanceof Error ? err.message : String(err),

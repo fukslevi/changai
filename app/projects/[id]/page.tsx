@@ -317,10 +317,15 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         <section
           className="card stack"
           dir="rtl"
-          style={{ gap: 6, borderColor: "var(--warn)" }}
+          style={{
+            gap: 6,
+            border: "2px solid var(--bad)",
+            background: "var(--bad)",
+            color: "#fff",
+          }}
         >
-          <h2 style={{ margin: 0, fontSize: 16, color: "var(--warn)" }}>
-            לא הועלה מסמך RFQ
+          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>
+            ● לא הועלה מסמך RFQ - לא ייצא אף מייל
           </h2>
           <p style={{ margin: 0, fontSize: 13.5 }}>
             בלי המסמך אי אפשר לייצר את מייל הפנייה, ולכן לא יישלח דבר - גם אם

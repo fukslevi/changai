@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { probeCredit } from "@/lib/health/credit";
 import { sweepBounces } from "@/lib/inbox/bounces";
+import { alertIfNoCredit } from "@/lib/notify/credit-alert";
 import { dispatchNotifications } from "@/lib/notify/dispatch";
 import { authorised } from "../auth";
 
@@ -37,9 +39,29 @@ export async function GET(request: Request) {
     bounces = { error: err instanceof Error ? err.message : String(err) };
   }
 
+  /*
+   * The credit check belongs here for the same reasons the bounce sweep does,
+   * and one more: this route is the only one that still works when the balance
+   * is empty. It calls no model - the alert goes over Gmail - so it can report
+   * a fault that silences everything else.
+   *
+   * probeCredit spends one token at most once a day while the balance is
+   * healthy, and retries every cycle while it is not, because what is being
+   * waited for then is recovery.
+   */
+  let credit: unknown = null;
+  try {
+    const status = await probeCredit();
+    const alert = await alertIfNoCredit();
+    credit = { ok: status.ok, checkedAt: status.checkedAt, alerted: alert.alerted };
+  } catch (err) {
+    credit = { error: err instanceof Error ? err.message : String(err) };
+  }
+
   const sent = await dispatchNotifications();
 
   return NextResponse.json({
+    credit,
     bounces,
     sent: sent.map(({ project, kind, subject, keys }) => ({
       project,

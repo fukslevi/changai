@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { desc } from "drizzle-orm";
 import { db, projects } from "@/lib/db";
+import { CreditBanner } from "./CreditBanner";
+import { creditStatus } from "@/lib/health/credit";
 import { lastCycleAt } from "@/lib/settings";
 import { slotState } from "@/lib/outreach/slot";
 import { nextActionsFor, nextCycleAt, nextSupplierWindow } from "@/lib/next-action";
@@ -41,6 +43,7 @@ export default async function ProjectsPage() {
 
   const statuses = await projectStatuses(rows);
   const stats = await projectStats(rows.map((r) => r.id));
+  const credit = await creditStatus();
   const cycle = await lastCycleAt();
   const slot = await slotState();
 
@@ -73,6 +76,14 @@ export default async function ProjectsPage() {
 
   return (
     <main className="stack">
+      {/*
+        Above everything, because it governs whether anything below it means
+        anything. Every funnel number on this page was produced by a model call,
+        and when the balance is empty those numbers stop moving while continuing
+        to look correct.
+      */}
+      <CreditBanner status={credit} />
+
       <div className="spread">
         <div>
           <h2 style={{ margin: 0 }}>Projects</h2>
@@ -141,6 +152,34 @@ export default async function ProjectsPage() {
                     {p.quantityTiers.length > 0 && ` · ${p.quantityTiers.join(" / ")}`}
                     {p.sourceRfqFile && ` · ${p.sourceRfqFile}`}
                   </div>
+                  {/*
+                    The loudest thing on the row, because it is the only state
+                    where every other number is beside the point: leads found,
+                    leads approved, autonomy on - and not one email can ever be
+                    sent, because there is no document to build one from. It
+                    was a line of grey text among four other lines of grey text.
+                  */}
+                  {!p.sourceRfqFile && (
+                    <div
+                      dir="rtl"
+                      style={{
+                        marginTop: 5,
+                        padding: "7px 10px",
+                        border: "2px solid var(--bad)",
+                        borderRadius: "var(--radius)",
+                        background: "var(--bad)",
+                        color: "#fff",
+                        fontSize: 12.5,
+                        fontWeight: 700,
+                      }}
+                    >
+                      ● אין מסמך RFQ - לא ייצא אף מייל
+                      <div style={{ fontWeight: 400, marginTop: 2, opacity: 0.95 }}>
+                        צריך להעלות את הקובץ בעמוד הפרויקט. עד אז הספקים
+                        שאושרו ממתינים ולא נשלחת אליהם שום פנייה.
+                      </div>
+                    </div>
+                  )}
                   {slot.queue.find((q) => q.id === p.id) && (
                     <div
                       className="muted"

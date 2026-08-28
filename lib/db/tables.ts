@@ -239,6 +239,24 @@ export const settings = pgTable("settings", {
    */
   maxColdPerDay: integer("max_cold_per_day").notNull().default(30),
 
+  /*
+   * Whether the Anthropic API still has credit.
+   *
+   * Every part of this system that reads a supplier's mail, scores a lead or
+   * parses an RFQ is a model call, so an empty balance stops the agent while
+   * leaving the app entirely healthy - pages load, mail still sends, numbers
+   * still render. It ran out on 28.08 and the only trace was a stringified
+   * error inside a cron summary nobody reads.
+   *
+   * Null means never checked, which is a different thing from "no credit" and
+   * is shown differently.
+   */
+  creditOk: boolean("credit_ok"),
+  creditCheckedAt: timestamp("credit_checked_at", { withTimezone: true }),
+  creditMessage: text("credit_message"),
+  /** Last time the empty-balance alert went out, so it goes daily not hourly. */
+  creditAlertedAt: timestamp("credit_alerted_at", { withTimezone: true }),
+
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
