@@ -34,7 +34,13 @@ export interface Bounce {
 
 export interface BounceSweep {
   found: Bounce[];
-  /** Leads whose address we cleared because it is permanently dead. */
+  /**
+   * Distinct addresses cleared, not bounce events.
+   *
+   * A dead address bounces on every send, so three bad mailboxes produced
+   * twelve reports - and a list of twelve looks like twelve problems rather
+   * than three suppliers we kept writing to.
+   */
   cleared: { company: string; email: string; reason: string }[];
 }
 
@@ -144,9 +150,12 @@ export async function sweepBounces(
   }
 
   const cleared: BounceSweep["cleared"] = [];
+  const seen = new Set<string>();
 
   for (const bounce of found) {
     if (!bounce.permanent) continue;
+    if (seen.has(bounce.recipient)) continue;
+    seen.add(bounce.recipient);
 
     const leads = await db
       .select({
@@ -197,7 +206,30 @@ export async function sweepBounces(
  * is what a bounce rate means - a price ask to an address that has already
  * answered is not a deliverability test, but it is still a delivery.
  */
-export async function bounceRate(): Promise<{ sent: number; bounced: number; pct: number | null }> {
+export interface BounceHealth {
+  /** Messages we sent that came back. This is the deliverability number. */
+  bounced: number;
+  sent: number;
+  pct: number | null;
+  /** Distinct mailboxes that do not exist. This is the address-quality number. */
+  deadAddresses: number;
+}
+
+/**
+ * Two numbers, because they answer different questions and only one of them is
+ * about the mailbox.
+ *
+ * Bounced messages over messages sent is what a mail provider watches: every
+ * bounce is a delivery that failed, and a dead address bounces again on every
+ * send, so writing to three bad mailboxes four times each counts as twelve.
+ * That is the honest deliverability figure and it is meant to.
+ *
+ * Distinct dead addresses over addresses written to is what says how good the
+ * scraping is. Reporting only the first makes the extraction look four times
+ * worse than it is; reporting only the second hides the repetition, which is
+ * the part that actually costs reputation.
+ */
+export async function bounceRate(): Promise<BounceHealth> {
   const outbound = await db
     .select({ id: messages.id })
     .from(messages)
@@ -206,11 +238,13 @@ export async function bounceRate(): Promise<{ sent: number; bounced: number; pct
     );
 
   const { found } = await sweepBounces({ apply: false });
-  const bounced = found.filter((b) => b.permanent).length;
+  const permanent = found.filter((b) => b.permanent);
+  const bounced = permanent.length;
 
   return {
     sent: outbound.length,
     bounced,
     pct: outbound.length > 0 ? (bounced / outbound.length) * 100 : null,
+    deadAddresses: new Set(permanent.map((b) => b.recipient)).size,
   };
 }

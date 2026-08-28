@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { and, asc, isNull } from "drizzle-orm";
 import { db, projects } from "@/lib/db";
+import { withinSupplierHours } from "@/lib/inbox/autopilot";
+import { pressForPrice } from "@/lib/inbox/press";
 import { runCampaign } from "@/lib/outreach/campaign";
 import { authorised } from "../auth";
 
@@ -47,11 +49,24 @@ export async function GET(request: Request) {
 
     try {
       const run = await runCampaign(project.id, { deadline });
+
+      /*
+       * Asking a supplier for a price is outbound mail to a factory, so it
+       * belongs here rather than in the cycle that reads the mailbox. It sat
+       * there and helped push that cycle past its five minutes, at which point
+       * the whole run returned nothing - including the polling that had
+       * already succeeded.
+       */
+      const pressed = withinSupplierHours()
+        ? await pressForPrice(project.id, { limit: 3, deadline })
+        : null;
+
       summary.push({
         project: project.name,
         sent: run.sent.length,
         failed: run.failed.length,
         remaining: run.remaining,
+        pricesAsked: pressed?.asked.length ?? 0,
         skipped: run.skipped,
       });
     } catch (err) {

@@ -3,7 +3,6 @@ import { asc, eq, sql } from "drizzle-orm";
 import { db, projects } from "@/lib/db";
 import { runAutopilot, triageAndPark, withinSendingHours, withinSupplierHours } from "@/lib/inbox/autopilot";
 import { runFollowUps } from "@/lib/inbox/followup";
-import { pressForPrice } from "@/lib/inbox/press";
 import { markCycleRun } from "@/lib/settings";
 import { pollInbox } from "@/lib/inbox/run";
 import { authorised } from "./auth";
@@ -50,7 +49,18 @@ export async function GET(request: Request) {
    * work. Stop cleanly instead: whatever is left is picked up next time,
    * because every step reads its own state rather than a position in a loop.
    */
-  const deadline = Date.now() + 170_000;
+  /*
+   * Lower than it looks like it should be, because this is a gate on starting
+   * a project rather than on finishing one. Whatever is already running when
+   * the deadline passes still has to complete, and a single project's triage
+   * can take a minute - so 140s of starting turns into roughly 200s of
+   * running, which is the margin a 300s function needs.
+   *
+   * The cycle overran and returned nothing at all when this was 170s with five
+   * projects, and a run that dies at the timeout reports no work rather than
+   * partial work.
+   */
+  const deadline = Date.now() + 140_000;
 
   const canReply = withinSupplierHours();
   const canContact = withinSendingHours();
@@ -98,17 +108,14 @@ export async function GET(request: Request) {
       const chases = await runFollowUps(project.id, { send: canReply });
 
       /*
-       * Ask the ones who answered and never priced. Inside supplier hours only,
-       * like any other unsolicited follow-up, and a few at a time - this is a
-       * backlog that does not need clearing in one afternoon.
+       * Stamped on the way out, so a project that threw still moves down the
+       * queue - otherwise one broken project blocks the rotation permanently.
        */
-      const pressed = canReply
-        ? await pressForPrice(project.id, { limit: 3, deadline })
-        : { asked: [], skipped: [], candidates: await (async () => [])() };
+      await db
+        .update(projects)
+        .set({ lastCycledAt: new Date() })
+        .where(eq(projects.id, project.id));
 
-      // First contact goes out on the same schedule as everything else. A
-      // project that is ready to write to suppliers and simply waits is not
-      // autonomous, whatever the setting says.
       summary.push({
         project: project.name,
         newMessages: inbox.newMessages,
@@ -116,7 +123,6 @@ export async function GET(request: Request) {
         replied: work.replied.length,
         heldForHuman: work.heldForHuman.length,
         chased: chases.chased.length,
-        pricesAsked: pressed.asked.length,
         closed: chases.closed.length,
         errors: inbox.errors,
       });
