@@ -52,12 +52,34 @@ export function gmailClient(): gmail_v1.Gmail {
   return google.gmail({ version: "v1", auth });
 }
 
+/**
+ * Strip anything that could end the header block or begin a new header.
+ *
+ * A supplier's subject reached this untouched once replies began following
+ * theirs, and one of them ended in a newline: "TO: Shlomi Saadi\n". In a raw
+ * MIME message a bare newline terminates the headers, so everything after it -
+ * MIME-Version, In-Reply-To, Content-Type and the base64 body - was delivered
+ * as visible text. Zoey received the envelope instead of the letter.
+ *
+ * It is also the injection. The subject and the address we reply to are both
+ * written by the person we are answering, and a subject ending in
+ * "\nBcc: someone@example.com" would have added a real header to our mail.
+ * That this arrived as a stray newline rather than a crafted one is luck.
+ *
+ * Every header value goes through it, not only the ones known to come from
+ * outside, because "known to come from outside" is the assumption that failed.
+ */
+export function sanitiseHeader(value: string): string {
+  return value.replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
 /** RFC 2047 for headers that contain anything outside ASCII. */
 function encodeHeader(value: string): string {
+  const clean = sanitiseHeader(value);
   // eslint-disable-next-line no-control-regex
-  return /^[\x00-\x7F]*$/.test(value)
-    ? value
-    : `=?UTF-8?B?${Buffer.from(value, "utf8").toString("base64")}?=`;
+  return /^[\x00-\x7F]*$/.test(clean)
+    ? clean
+    : `=?UTF-8?B?${Buffer.from(clean, "utf8").toString("base64")}?=`;
 }
 
 function wrap76(base64: string): string {
@@ -66,14 +88,14 @@ function wrap76(base64: string): string {
 
 function buildRawMessage(from: string, options: SendOptions): string {
   const headers = [
-    `From: ${from}`,
-    `To: ${options.to}`,
+    `From: ${sanitiseHeader(from)}`,
+    `To: ${sanitiseHeader(options.to)}`,
     `Subject: ${encodeHeader(options.subject)}`,
     "MIME-Version: 1.0",
   ];
 
-  if (options.inReplyTo) headers.push(`In-Reply-To: ${options.inReplyTo}`);
-  if (options.references) headers.push(`References: ${options.references}`);
+  if (options.inReplyTo) headers.push(`In-Reply-To: ${sanitiseHeader(options.inReplyTo)}`);
+  if (options.references) headers.push(`References: ${sanitiseHeader(options.references)}`);
 
   const attachments = options.attachments ?? [];
 
@@ -119,8 +141,8 @@ export async function sendEmail(options: SendOptions): Promise<SendResult> {
   if (!mailbox) throw new Error("SOURCING_MAILBOX is not set");
 
   const from = options.fromName
-    ? `${encodeHeader(options.fromName)} <${mailbox}>`
-    : mailbox;
+    ? `${encodeHeader(options.fromName)} <${sanitiseHeader(mailbox)}>`
+    : sanitiseHeader(mailbox);
 
   const raw = Buffer.from(buildRawMessage(from, options), "utf8")
     .toString("base64")
