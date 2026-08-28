@@ -43,11 +43,15 @@ async function main() {
     for (const b of status.blocked) console.log(`  ${b.companyName} - ${b.reason}`);
   }
 
-  const first = status.pending[0];
-  if (first) {
-    console.log(`\n--- as ${first.companyName} would receive it ---\n`);
-    console.log(campaign.body.replaceAll(COMPANY_PLACEHOLDER, first.companyName));
-  }
+  /*
+   * The body prints whether or not anyone is queued. It used to appear only
+   * when a recipient was pending, which hid it in the one case you most want
+   * to read it: checking a template change against a project that has already
+   * finished sending.
+   */
+  const name = status.pending[0]?.companyName ?? "your company";
+  console.log(`\n--- as ${name} would receive it ---\n`);
+  console.log(campaign.body.replaceAll(COMPANY_PLACEHOLDER, name));
 
   process.exit(0);
 }
