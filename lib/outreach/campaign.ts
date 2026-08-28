@@ -84,6 +84,11 @@ export async function runCampaign(
       getSettings(),
     ]);
 
+    /*
+     * No parsed document means no email can be built, and that is a person's
+     * job rather than a failure. Saying so beats throwing "no saved email"
+     * into the cycle summary once every two hours forever.
+     */
     if (projectItems.length > 0) {
       const { subject, body } = buildOutreachEmail(project, projectItems, projectRequirements, {
         name: settings.senderName,

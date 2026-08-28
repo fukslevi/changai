@@ -24,8 +24,34 @@
  * different product is having its turn.
  */
 import { and, asc, eq, gte, isNull, sql } from "drizzle-orm";
-import { db, messages, projects, settings } from "../db";
+import { db, items, messages, projects, settings } from "../db";
 import { campaignStatus } from "./batch";
+
+/**
+ * A project with no RFQ has nothing to send, whatever its shortlist says.
+ *
+ * Electric Lunch Box was created from keywords alone, found forty-five
+ * suppliers and queued thirty-two of them - and every cycle it reached the send
+ * step, failed on "no saved email for this project", and reported an error.
+ * The outreach mail is built from the parsed document, so with no document
+ * there is nothing to build and nothing to say to a factory.
+ *
+ * It belongs out of the queue rather than at the end of it: a project waiting
+ * for a person to upload a file is not waiting for its turn.
+ */
+async function hasSomethingToSay(projectId: string): Promise<boolean> {
+  const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+  if (!project) return false;
+  if (project.outreachBody && project.outreachSubject) return true;
+
+  const parsed = await db
+    .select({ id: items.id })
+    .from(items)
+    .where(eq(items.projectId, projectId))
+    .limit(1);
+
+  return parsed.length > 0;
+}
 
 export interface SlotState {
   /** The project currently at the front of the queue, if any. */
@@ -110,9 +136,9 @@ async function queue(): Promise<{ id: string; name: string; pending: number }[]>
   const out: { id: string; name: string; pending: number }[] = [];
   for (const project of live) {
     const status = await campaignStatus(project.id);
-    if (status.pending.length > 0) {
-      out.push({ id: project.id, name: project.name, pending: status.pending.length });
-    }
+    if (status.pending.length === 0) continue;
+    if (!(await hasSomethingToSay(project.id))) continue;
+    out.push({ id: project.id, name: project.name, pending: status.pending.length });
   }
   return out;
 }
@@ -201,6 +227,14 @@ export async function mayStartOutreach(projectId: string): Promise<SlotDecision>
       may: false,
       reason: "daily cap",
       reasonHe: `מכסת היום מוצתה (${sent}/${cap}) · ממשיך מחר`,
+    };
+  }
+
+  if (!(await hasSomethingToSay(projectId))) {
+    return {
+      may: false,
+      reason: "no rfq",
+      reasonHe: "אין RFQ בפרויקט - צריך להעלות מסמך לפני שאפשר לפנות לספקים",
     };
   }
 
