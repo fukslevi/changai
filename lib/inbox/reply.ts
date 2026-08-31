@@ -12,7 +12,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { and as andOp } from "drizzle-orm";
 import { db, items, messages, openQuestions, outreach, projects, requirements, suppliers } from "../db";
 import { messageIdHeaderOf, sendEmail } from "../mail/gmail";
-import { attachmentBlocks } from "../quotes/context";
+import { attachmentSummary } from "../quotes/context";
 import { getSettings } from "../settings";
 
 export { GAP_LABELS } from "./labels";
@@ -93,10 +93,10 @@ export async function draftReply({ projectId, supplierId }: DraftContext): Promi
   const latest = [...thread].reverse().find((m) => m.direction === "inbound");
   const analysis = latest?.analysis;
 
-  // Same view of the attachments the autopilot has. Drafting without them
-  // produced a reply telling a supplier we had never received the quotation
-  // they had in fact sent.
-  const attachments = await attachmentBlocks(latest?.attachments ?? []);
+  // Same view of the attachments the autopilot has - the extracted reading
+  // rather than the files. Drafting with no view of them at all produced a
+  // reply telling a supplier we had never received the quotation they sent.
+  const attachments = await attachmentSummary(projectId, supplierId, latest?.attachments ?? []);
 
   /*
    * Decisions already made on this project. The autopilot had these and the

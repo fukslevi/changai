@@ -27,7 +27,7 @@ import {
 } from "../db";
 import { checkDraft } from "../negotiate/guard";
 import { loadMandate, mandateBrief, type Mandate } from "../negotiate/mandate";
-import { attachmentBlocks } from "../quotes/context";
+import { attachmentSummary } from "../quotes/context";
 import { getSettings } from "../settings";
 import { sendReply } from "./reply";
 
@@ -222,13 +222,17 @@ export async function planReply(
   const latest = [...thread].reverse().find((m) => m.direction === "inbound");
 
   /*
-   * Read what they attached. Without this the planner sees "please check" and a
+   * Read what they attached - as the extraction already read it, not as raw
+   * pages. Without any view of the files the planner sees "please check" and a
    * filename, decides it cannot judge a quotation it never opened, and hands
-   * the thread to a person - which is the right call when you are blind, and
-   * unnecessary once you are not. The numbers a supplier considers the answer
-   * are almost always in the file, not the message.
+   * the thread to a person; the numbers a supplier considers the answer are
+   * almost always in the file, not the message.
+   *
+   * But the pages themselves only needed reading once. This used to re-send the
+   * binaries - the same 6MB catalogue billed here and again in the drafter,
+   * after the extractor had already turned it into numbers.
    */
-  const attachments = await attachmentBlocks(latest?.attachments ?? []);
+  const attachments = await attachmentSummary(projectId, supplierId, latest?.attachments ?? []);
 
   const brief = [
     `PRODUCT: ${project.name}`,

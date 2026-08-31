@@ -8,8 +8,9 @@
  * the quotation she had just sent. The capability was there; nothing carried it
  * to the model.
  */
-import { eq } from "drizzle-orm";
-import { db, files, messages } from "../db";
+import { and, desc, eq } from "drizzle-orm";
+import { db, files, messages, quoteReadings } from "../db";
+import sharp from "sharp";
 import { readAttachment } from "./read";
 
 /** Per file, so one unreadable attachment does not crowd out the others. */
@@ -69,6 +70,48 @@ function imageType(mediaType: string | undefined): ImageMediaType | null {
   }
 }
 
+/**
+ * Vision input is billed by pixel area, not by information, so a 6MB phone
+ * photo of a price list costs many times what the same price list costs at a
+ * size you can still read. 102 images had gone to the model at whatever
+ * resolution the supplier's camera happened to use, 35.9MB of them.
+ *
+ * 1280px on the long edge keeps a quotation, a label and a spec sheet legible
+ * while capping what any one image can cost. Failures return the original -
+ * an image that reaches the model expensively still beats one that does not
+ * reach it at all.
+ */
+const MAX_IMAGE_EDGE = 1280;
+
+async function downscale(
+  data: Buffer,
+  mediaType: ImageMediaType,
+): Promise<{ data: Buffer; mediaType: ImageMediaType }> {
+  try {
+    const image = sharp(data, { failOn: "none" });
+    const meta = await image.metadata();
+    const longest = Math.max(meta.width ?? 0, meta.height ?? 0);
+    if (longest === 0 || longest <= MAX_IMAGE_EDGE) return { data, mediaType };
+
+    /*
+     * Re-encoded as JPEG whatever it arrived as. A resized PNG of a photograph
+     * stays large for no benefit, and nothing here depends on transparency -
+     * these are pictures of documents and products.
+     */
+    const resized = await image
+      .rotate()
+      .resize({ width: MAX_IMAGE_EDGE, height: MAX_IMAGE_EDGE, fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 80 })
+      .toBuffer();
+
+    return resized.length < data.length
+      ? { data: resized, mediaType: "image/jpeg" }
+      : { data, mediaType };
+  } catch {
+    return { data, mediaType };
+  }
+}
+
 export async function attachmentBlocks(
   attachments: { filename: string; mimeType: string; storagePath: string }[],
 ): Promise<AttachmentBlock[]> {
@@ -109,11 +152,13 @@ export async function attachmentBlocks(
       } else {
         const media = imageType(parsed.mediaType);
         if (media && parsed.base64.length <= MAX_IMAGE_BASE64) {
+          const shrunk = await downscale(Buffer.from(parsed.base64, "base64"), media);
+          const encoded = shrunk.data.toString("base64");
           blocks.push({
             type: "image",
-            source: { type: "base64", media_type: media, data: parsed.base64 },
+            source: { type: "base64", media_type: shrunk.mediaType, data: encoded },
           });
-          spent += parsed.base64.length;
+          spent += encoded.length;
         } else if (media) {
           blocks.push({
             type: "text",
@@ -136,6 +181,92 @@ export async function attachmentBlocks(
   }
 
   return blocks;
+}
+
+/**
+ * What the attachments SAID, instead of the attachments themselves.
+ *
+ * The binaries were being sent three times for one supplier reply: once to
+ * extract the quotation, once to plan the answer, once to draft it. Measured
+ * across the mailbox that is 20 PDFs (241 pages) and 102 images, 81.6MB, and
+ * the two later calls were re-reading pages the first call had already turned
+ * into numbers. Over 95% of the model's input was catalogues and photos; the
+ * text a supplier actually typed came to 25k tokens in total.
+ *
+ * The extraction is the only call that needs to look at a page. Once it has
+ * run, its reading is a better input for planning and drafting than the file
+ * ever was - it is the same information with the ambiguity already resolved.
+ *
+ * If no reading exists - extraction has not run yet, or it failed - this falls
+ * back to the binaries, because a planner that cannot see the quotation tells
+ * suppliers we never received it. Cheaper is not worth that.
+ */
+export async function attachmentSummary(
+  projectId: string,
+  supplierId: string,
+  attachments: { filename: string; mimeType: string; storagePath: string }[],
+): Promise<AttachmentBlock[]> {
+  if (attachments.length === 0) return [];
+
+  const [reading] = await db
+    .select()
+    .from(quoteReadings)
+    .where(
+      and(eq(quoteReadings.projectId, projectId), eq(quoteReadings.supplierId, supplierId)),
+    )
+    .orderBy(desc(quoteReadings.createdAt))
+    .limit(1);
+
+  if (!reading) return attachmentBlocks(attachments);
+
+  const money = (v: string | null) => (v === null ? null : `${reading.currency} ${v}`);
+  const lines: string[] = [
+    `WHAT THEY ATTACHED: ${attachments.map((a) => a.filename).join(", ")}`,
+    "",
+    "ALREADY READ OUT OF THOSE FILES - treat this as what the documents say:",
+  ];
+
+  for (const line of reading.lines) {
+    const price = line.unit_price === null ? "no price" : `${reading.currency} ${line.unit_price}`;
+    const qty = line.qty === null ? "" : ` at ${line.qty}`;
+    const note = line.spec_note ? ` - ${line.spec_note}` : "";
+    lines.push(`  - ${line.item_name}${qty}: ${price}${note}`);
+  }
+  if (reading.lines.length === 0) lines.push("  (no priced lines in the documents)");
+
+  const facts: [string, unknown][] = [
+    ["incoterm", [reading.incoterm, reading.incotermPlace].filter(Boolean).join(" ") || null],
+    ["MOQ", reading.moq],
+    ["lead time (days)", reading.leadTimeDays],
+    ["payment terms", reading.paymentTerms],
+    ["sample price", money(reading.samplePrice ?? null)],
+    ["sample lead time (days)", reading.sampleLeadTimeDays],
+    ["tooling", money(reading.toolingCost ?? null)],
+    ["certificates", reading.certificates.join(", ") || null],
+    ["units per carton", reading.unitsPerCarton],
+    ["carton", reading.cartonDimensionsCm],
+    ["carton gross weight (kg)", reading.cartonGrossWeightKg],
+  ];
+  const known = facts.filter(([, v]) => v !== null && v !== undefined && v !== "");
+  if (known.length > 0) {
+    lines.push("", "TERMS FROM THE DOCUMENTS:");
+    for (const [label, value] of known) lines.push(`  ${label}: ${value}`);
+  }
+
+  if (reading.deviations.length > 0) {
+    lines.push("", "WHERE THEIR OFFER DIFFERS FROM THE RFQ:");
+    for (const d of reading.deviations) {
+      lines.push(
+        `  - we asked ${d.our_requirement}; they offer ${d.what_they_offer}${d.their_reason ? ` (${d.their_reason})` : ""}`,
+      );
+    }
+  }
+
+  if (reading.rejectsTargetPrice) {
+    lines.push("", `THEY PUSHED BACK ON THE TARGET PRICE: ${reading.priceObjection ?? "(no reason given)"}`);
+  }
+
+  return [{ type: "text", text: lines.join("\n") }];
 }
 
 /** The attachments on the most recent inbound message of a thread. */

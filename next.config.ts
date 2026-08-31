@@ -1,7 +1,14 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["postgres"],
+  /*
+   * sharp is a native module - bundling it breaks the binary it loads at
+   * runtime, so it is left external like postgres. It downscales supplier
+   * photos before they go to the model; vision input is billed by pixel area,
+   * and 6MB phone pictures of a price list cost many times what a legible copy
+   * of the same page costs.
+   */
+  serverExternalPackages: ["postgres", "sharp"],
   experimental: {
     /**
      * Server Actions cap request bodies at 1MB by default, which rejects any
