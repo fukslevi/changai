@@ -81,6 +81,43 @@ function imageType(mediaType: string | undefined): ImageMediaType | null {
  * an image that reaches the model expensively still beats one that does not
  * reach it at all.
  */
+/**
+ * Compliance certificates, described rather than sent.
+ *
+ * Measured on the real mailbox: 241 PDF pages arrived from suppliers, and the
+ * three largest documents were a 57-page CE-EMC report, a 26-page CE-LVD report
+ * and a 24-page SGS assessment. Together with one more certificate they are 108
+ * pages - 45% of everything - and not one of them contains a price, an MOQ or a
+ * lead time. What the extractor produced from SINOCO's 83 pages of test reports,
+ * in full, was: "CE (EMC EN55015/EN61547, LVD EN60598)". One line, derivable
+ * from the filenames.
+ *
+ * Two guards against skipping something that matters. The name has to look like
+ * a certificate, and the document has to be long enough that sending it costs
+ * something - a one-page certificate is cheap, and a supplier who names their
+ * quotation "CE price list.pdf" keeps it. When the page count cannot be read the
+ * document is sent: unknown is not the same as large, and the failure that
+ * matters here is a quotation we never opened.
+ */
+const CERTIFICATE_NAME =
+  /\b(ce[-_ ]?(emc|lvd|doc)|emc|lvd|sgs|rohs|reach|iso\s*\d|bsci|fcc|prop\s*65|cpsia|certificat|zertifikat|test\s*report|inspection\s*report)\b/i;
+
+/** Below this a certificate is not worth the machinery - just send it. */
+const CERTIFICATE_MIN_PAGES = 4;
+
+/**
+ * Page count straight from the PDF's own object table.
+ *
+ * A heuristic, and deliberately a conservative one: on a PDF whose page tree is
+ * inside a compressed object stream it finds nothing and returns 0, which reads
+ * as "do not skip". Good enough to decide whether a document is long; not good
+ * enough to bill on, and nothing here bills on it.
+ */
+function pdfPageCount(data: Buffer): number {
+  const matches = data.toString("latin1").match(/\/Type\s*\/Page[^s]/g);
+  return matches ? matches.length : 0;
+}
+
 const MAX_IMAGE_EDGE = 1280;
 
 async function downscale(
@@ -143,6 +180,20 @@ export async function attachmentBlocks(
     if (parsed.base64 && parsed.base64.length <= MAX_DOCUMENT_BASE64) {
       blocks.push({ type: "text", text: `--- ${stored.filename} ---` });
       if (parsed.kind === "pdf") {
+        const raw = Buffer.from(parsed.base64, "base64");
+        const pages = pdfPageCount(raw);
+
+        if (CERTIFICATE_NAME.test(stored.filename) && pages >= CERTIFICATE_MIN_PAGES) {
+          blocks.push({
+            type: "text",
+            text:
+              `(${stored.filename}: a ${pages}-page compliance certificate, not sent in full. ` +
+              `Record that this certificate exists and what it covers, from its name. ` +
+              `Certificates carry no price, MOQ or lead time.)`,
+          });
+          continue;
+        }
+
         blocks.push({
           type: "document",
           source: { type: "base64", media_type: "application/pdf", data: parsed.base64 },
