@@ -5,7 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { db, files, projects } from "../db";
+import { db, files, items, projects } from "../db";
 
 const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
 
@@ -55,6 +55,27 @@ export async function createProject(
 
   const projectId = randomUUID();
   const autonomous = formData.get("autonomous") === "on";
+  const projectMode = formData.get("projectMode") === "screening" ? "screening" : "production";
+
+  /*
+   * Screening has no RFQ to read a target price or quantity tiers from - the
+   * operator states them directly, because the whole point of this mode is to
+   * find out whether that number is reachable before any document exists.
+   */
+  let screeningTiers: number[] = [];
+  let screeningTarget: number | null = null;
+  if (projectMode === "screening") {
+    screeningTiers = String(formData.get("screeningTiers") ?? "")
+      .split(/[,\n]/)
+      .map((t) => Number(t.trim().replace(/[^0-9.]/g, "")))
+      .filter((t) => Number.isFinite(t) && t > 0);
+
+    const rawTarget = String(formData.get("screeningTarget") ?? "").replace(/[^0-9.]/g, "");
+    screeningTarget = rawTarget ? Number(rawTarget) : null;
+    if (screeningTarget === null || !Number.isFinite(screeningTarget) || screeningTarget <= 0) {
+      return { error: "מחיר מטרה נדרש לבדיקת מחיר מהירה" };
+    }
+  }
 
   await db.transaction(async (tx) => {
     await tx.insert(projects).values({
@@ -62,11 +83,16 @@ export async function createProject(
       name: parsed.data.name,
       keywords: parsed.data.keywords,
       status: "draft",
+      projectMode,
       // Chosen on the creation form, so the project starts in the mode the
       // operator wants rather than in the safest one they then have to change.
       autonomyTier: autonomous ? 3 : 1,
-      // Read from the RFQ's own pricing table during parsing — never assumed.
-      quantityTiers: [],
+      // A screening pass is meant to move fast and wide, not go rounds deep
+      // with any one factory - the production default stays as it was.
+      maxNegotiationRounds: projectMode === "screening" ? 3 : 10,
+      // Read from the RFQ's own pricing table during parsing — never assumed,
+      // except in screening, where the operator states it directly (no RFQ).
+      quantityTiers: projectMode === "screening" ? screeningTiers : [],
       sourceRfqFile: hasFile ? upload.name : null,
     });
 
@@ -78,6 +104,21 @@ export async function createProject(
         sizeBytes: upload.size,
         content: Buffer.from(await upload.arrayBuffer()),
         kind: "rfq",
+      });
+    }
+
+    if (projectMode === "screening" && screeningTarget !== null) {
+      const tiers = screeningTiers.length > 0 ? screeningTiers : [null];
+      await tx.insert(items).values({
+        projectId,
+        name: parsed.data.name,
+        kind: "priced_variant",
+        targetPrices: tiers.map((qty) => ({
+          option_id: null,
+          qty,
+          unit_price: screeningTarget,
+          currency: "USD",
+        })),
       });
     }
   });

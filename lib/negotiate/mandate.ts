@@ -32,6 +32,8 @@ export interface PriceCeiling {
 }
 
 export interface Mandate {
+  /** screening = one fast price check, no spec depth. production = full RFQ. */
+  mode: "screening" | "production";
   /** 1 = facts only. 3 = negotiate price and specification. */
   tier: number;
   /** True when the agent may open a price discussion at all. */
@@ -131,6 +133,7 @@ export async function loadMandate(projectId: string): Promise<Mandate> {
       : null;
 
   return {
+    mode: project.projectMode,
     tier,
     mayNegotiatePrice: tier >= 3 && ceilings.length > 0,
     maySubstituteSpec: tier >= 3 && project.allowSpecSubstitution,
@@ -150,6 +153,16 @@ export function mandateBrief(mandate: Mandate): string {
   const lines: string[] = [
     "NEGOTIATION MANDATE",
     "",
+    ...(mandate.mode === "screening"
+      ? [
+          "This is a fast SCREENING pass, not a full negotiation. The only question",
+          "is whether this supplier can approach the target price - do not discuss",
+          "specification, materials, certification, packaging or differentiation,",
+          "and do not go deep on any single supplier. Get a number quickly, or a",
+          "clear no, and move on.",
+          "",
+        ]
+      : []),
     "Your goal is to land as close to the target price as possible. Open at the",
     "target. Never reveal the ceiling - it is your walk-away, not an offer.",
     `A quote within ${ACCEPTABLE_GAP_PCT}% of target is worth taking forward; further`,

@@ -3,6 +3,7 @@ import { checkDraft } from "../lib/negotiate/guard";
 import type { Mandate } from "../lib/negotiate/mandate";
 
 const mandate: Mandate = {
+  mode: "production",
   tier: 3,
   mayNegotiatePrice: true,
   maySubstituteSpec: false,

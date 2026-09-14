@@ -51,6 +51,18 @@ export const projects = pgTable("projects", {
     .$type<"draft" | "sourcing" | "negotiating" | "sampling" | "closed">()
     .notNull()
     .default("draft"),
+  /**
+   * screening   — a fast, wide pass to see whether a target landed price is
+   *               reachable at all. No specification depth, no differentiation,
+   *               one number: can this factory approach the target.
+   * production  — the full RFQ process toward an order: specification,
+   *               certification, packaging, real negotiation.
+   * Changes what the outreach email asks for and what the negotiation mandate
+   * lets the agent spend rounds discussing - not a different table, because
+   * a screening project that finds a workable price becomes a production one
+   * with the same suppliers and the same thread, not a new project.
+   */
+  projectMode: text("project_mode").$type<"screening" | "production">().notNull().default("production"),
   /** Read from the RFQ's own pricing table — never defaulted. See schema.ts. */
   quantityTiers: jsonb("quantity_tiers").$type<number[]>().notNull().default([]),
   currency: text("currency").notNull().default("USD"),

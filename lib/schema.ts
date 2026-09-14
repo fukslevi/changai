@@ -151,6 +151,8 @@ export const Project = z.object({
   version: z.string().nullable(), // "1.0" — RFQs get revised
   period: z.string().nullable(), // "February 2025"
   status: z.enum(["draft", "sourcing", "negotiating", "sampling", "closed"]),
+  /** screening = fast target-price check, no spec depth. production = full RFQ. */
+  project_mode: z.enum(["screening", "production"]).default("production"),
   /** Required. Read from the RFQ pricing tables — never assumed. */
   quantity_tiers: z.array(z.number().int()),
   currency: z.string().default("USD"),

@@ -57,6 +57,10 @@ export function buildOutreachEmail(
   allRequirements: Requirement[],
   sender: { name: string; title: string },
 ): { subject: string; body: string } {
+  if (project.projectMode === "screening") {
+    return buildScreeningEmail(project, allItems, sender);
+  }
+
   const priced = allItems.filter((i) => i.kind === "priced_variant");
   const bundled = allItems.filter((i) => i.kind === "bundled_component");
   const optional = allItems.filter((i) => i.kind === "optional_addon");
@@ -215,6 +219,81 @@ export function buildOutreachEmail(
   lines.push(
     "If you do not make this product, just reply and say so - we will not follow",
     "up.",
+    "",
+    "Best regards,",
+    sender.name,
+    `${sender.title}, SoSimple`,
+  );
+
+  return { subject, body: lines.join("\n") };
+}
+
+/**
+ * The screening email: one number, asked for fast, from as many factories as
+ * possible.
+ *
+ * The full RFQ email above earns its length - packaging, certification,
+ * quality history all price the actual order. None of that has been decided
+ * yet at the screening stage: the only question is whether a landed price
+ * near the target is reachable at all, before any time goes into a
+ * specific model, material grade or differentiation. So this asks for one
+ * number against a stated target, says plainly what is not being asked yet,
+ * and pushes for a same-week reply - a wide, fast pass, not a negotiation.
+ */
+function buildScreeningEmail(
+  project: Project,
+  allItems: Item[],
+  sender: { name: string; title: string },
+): { subject: string; body: string } {
+  const priced = allItems.filter((i) => i.kind === "priced_variant");
+  const main = priced[0];
+  const tiers = project.quantityTiers;
+
+  const target = main?.targetPrices.find((p) => p.unit_price !== null)?.unit_price ?? null;
+
+  const subject = `${project.name} - quick price check${target !== null ? ` (target $${target.toFixed(2)} landed)` : ""}`;
+
+  const lines: string[] = [];
+  lines.push(`Hello ${COMPANY_PLACEHOLDER},`, "");
+  lines.push(
+    "We are SoSimple, an Amazon US brand. Before we run a full RFQ, we are",
+    "doing a quick price check with a number of factories - this is not yet a",
+    "request for your exact specification, certification or branding.",
+    "",
+  );
+
+  lines.push("PRODUCT");
+  lines.push(`${main?.name ?? project.name}.`, "");
+
+  if (tiers.length > 0) {
+    lines.push(`QUANTITY: ${formatQty(tiers)}`, "");
+  }
+
+  lines.push("THE ONE NUMBER WE NEED");
+  if (target !== null) {
+    lines.push(
+      `Our target is $${target.toFixed(2)} per unit, all-in - landed FOB China`,
+      "including your freight/shipping to get it to that price, at the quantity",
+      "above. We are not asking about materials, colors, packaging or",
+      "certification yet - just whether you can reach this number, or how",
+      "close you can get.",
+    );
+  } else {
+    lines.push(
+      "Please send your best all-in unit price, including shipping, at the",
+      "quantity above - materials, colors, packaging and certification can wait",
+      "for the next round.",
+    );
+  }
+  lines.push("");
+
+  lines.push(
+    "Please reply within 2-3 days with a number, even a rough one - \"we can",
+    "get close\" or \"not at this volume\" both help us move fast. Factories who",
+    "reply quickly with a workable price are who we go deeper with next.",
+    "",
+    "If you do not make this product, a one-line reply saying so is all we",
+    "need - we will not follow up.",
     "",
     "Best regards,",
     sender.name,
