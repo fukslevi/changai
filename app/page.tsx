@@ -159,7 +159,7 @@ export default async function ProjectsPage() {
                     sent, because there is no document to build one from. It
                     was a line of grey text among four other lines of grey text.
                   */}
-                  {!p.sourceRfqFile && (
+                  {!p.sourceRfqFile && p.projectMode !== "screening" && (
                     <div
                       dir="rtl"
                       style={{
@@ -228,6 +228,15 @@ export default async function ProjectsPage() {
                     if (!status) return null;
                     return (
                       <>
+                        {p.projectMode === "screening" && (
+                          <span
+                            className="tag"
+                            style={{ color: "var(--accent)" }}
+                            title="בדיקת מחיר מטרה מהירה - לא RFQ מלא"
+                          >
+                            מחיר מטרה
+                          </span>
+                        )}
                         <span
                           className="tag"
                           style={{ color: status.autonomous ? "var(--ok)" : "var(--muted)" }}

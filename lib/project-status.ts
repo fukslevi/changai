@@ -296,7 +296,7 @@ export async function projectStatuses(
     } else if (approved > 0) {
       activity = "ready_to_send";
       nextAction = `${approved} ספקים מאושרים, ממתינים שתשלח`;
-    } else if (sent.length === 0 && project.sourceRfqFile) {
+    } else if (sent.length === 0 && (project.sourceRfqFile || project.projectMode === "screening")) {
       activity = "ready_to_send";
       nextAction = "אין עדיין ספקים מאושרים";
     } else if (sent.length === 0) {

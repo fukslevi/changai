@@ -87,9 +87,13 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
    * Setup that can still run unattended. An RFQ that has not been read, an
    * email that has not been written, a search that has not run - all derived
    * from the document, none of them a decision, so the page starts them itself.
+   *
+   * A screening project has no document to read - its one item and target
+   * price were entered directly on creation - but the email and the search
+   * are exactly as automatic as they are on a full RFQ project.
    */
   const setupPending =
-    Boolean(project.sourceRfqFile) &&
+    (Boolean(project.sourceRfqFile) || project.projectMode === "screening") &&
     (projectItems.length === 0 || !project.outreachBody || leads.length === 0);
 
   // One row per supplier we wrote to, in the order the conversation happened.
@@ -188,6 +192,15 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         </div>
         <div className="stack" style={{ gap: 4, alignItems: "flex-end" }}>
           <div className="row" style={{ gap: 6 }}>
+          {project.projectMode === "screening" && (
+            <span
+              className="tag"
+              style={{ color: "var(--accent)" }}
+              title="בדיקת מחיר מטרה מהירה - לא RFQ מלא. אין ספציפיקציה, בידול או תעודות בתהליך הזה."
+            >
+              מחיר מטרה
+            </span>
+          )}
           {project.archivedAt ? (
             <span className="tag" style={{ color: "var(--muted)" }}>
               <span className="status-dot" style={{ background: "var(--muted)" }} />
@@ -313,7 +326,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         lead into an email had never been uploaded. The setup banner above does
         not cover it, because it only runs once a document exists.
       */}
-      {!project.sourceRfqFile && (
+      {!project.sourceRfqFile && project.projectMode !== "screening" && (
         <section
           className="card stack"
           dir="rtl"
