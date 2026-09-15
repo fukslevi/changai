@@ -12,6 +12,10 @@
     {
       "path": "/api/cron/notify",
       "schedule": "10 3 * * *"
+    },
+    {
+      "path": "/api/cron/intake",
+      "schedule": "15 3 * * *"
     }
   ],
   "functions": {
@@ -23,6 +27,9 @@
     },
     "app/api/cron/route.ts": {
       "maxDuration": 300
+    },
+    "app/api/cron/intake/route.ts": {
+      "maxDuration": 60
     }
   }
 }

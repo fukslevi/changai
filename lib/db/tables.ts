@@ -259,6 +259,19 @@ export const settings = pgTable("settings", {
   maxColdPerDay: integer("max_cold_per_day").notNull().default(30),
 
   /*
+   * Product intake sheet.
+   *
+   * The operator's own product list, kept outside this app - a screening
+   * project is created from each new row so a product goes from "someone
+   * typed it in a spreadsheet" to "an RFQ went to suppliers" with nobody
+   * touching the app in between.
+   */
+  /** Full edit URL, e.g. https://docs.google.com/spreadsheets/d/…/edit#gid=0 - must be shared "anyone with the link". */
+  productIntakeSheetUrl: text("product_intake_sheet_url"),
+  /** How many data rows (below the header) have already been turned into projects. Rows are only ever appended, so this is the high-water mark, not a set of ids. */
+  productIntakeLastRow: integer("product_intake_last_row").notNull().default(0),
+
+  /*
    * Whether the Anthropic API still has credit.
    *
    * Every part of this system that reads a supplier's mail, scores a lead or

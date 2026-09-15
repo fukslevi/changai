@@ -103,3 +103,37 @@ export async function saveSettings(values: AppSettings): Promise<void> {
       set: { ...values, updatedAt: new Date() },
     });
 }
+
+/* ── Product intake sheet ──────────────────────────────────────────────── */
+
+export interface ProductIntakeConfig {
+  sheetUrl: string | null;
+  /** Data rows already turned into projects. */
+  lastRow: number;
+}
+
+export async function getProductIntakeConfig(): Promise<ProductIntakeConfig> {
+  const [row] = await db.select().from(settings).where(eq(settings.id, SINGLETON_ID));
+  return {
+    sheetUrl: row?.productIntakeSheetUrl ?? null,
+    lastRow: row?.productIntakeLastRow ?? 0,
+  };
+}
+
+export async function setProductIntakeSheetUrl(url: string): Promise<void> {
+  await db
+    .insert(settings)
+    .values({ id: SINGLETON_ID, productIntakeSheetUrl: url })
+    .onConflictDoUpdate({
+      target: settings.id,
+      set: { productIntakeSheetUrl: url, updatedAt: new Date() },
+    });
+}
+
+/** Advances the high-water mark. Never moves backward - a re-run must not re-create a project. */
+export async function advanceProductIntakeRow(row: number): Promise<void> {
+  await db
+    .update(settings)
+    .set({ productIntakeLastRow: row, updatedAt: new Date() })
+    .where(eq(settings.id, SINGLETON_ID));
+}

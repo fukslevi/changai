@@ -2,7 +2,8 @@ import Link from "next/link";
 import { Guide } from "@/app/Guide";
 import { logout } from "@/lib/actions/auth";
 import { currentUser } from "@/lib/auth";
-import { getSettings } from "@/lib/settings";
+import { getProductIntakeConfig, getSettings } from "@/lib/settings";
+import { ProductIntake } from "./ProductIntake";
 import { SenderIdentity } from "./SenderIdentity";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,11 @@ function Status({ ok, label }: { ok: boolean; label: string }) {
 }
 
 export default async function SettingsPage() {
-  const [user, appSettings] = await Promise.all([currentUser(), getSettings()]);
+  const [user, appSettings, intake] = await Promise.all([
+    currentUser(),
+    getSettings(),
+    getProductIntakeConfig(),
+  ]);
 
   const env = {
     anthropic: Boolean(process.env.ANTHROPIC_API_KEY),
@@ -61,6 +66,12 @@ export default async function SettingsPage() {
         <Guide k="senderIdentity" />
         <Guide k="notifications" />
         <Guide k="outreachSlot" />
+      </section>
+
+      {/* ── Product intake ──────────────────────────────────────────────── */}
+      <section className="card stack">
+        <h2 dir="rtl">גיליון קליטת מוצרים</h2>
+        <ProductIntake sheetUrl={intake.sheetUrl} lastRow={intake.lastRow} />
       </section>
 
       {/* ── Connections ─────────────────────────────────────────────────── */}
