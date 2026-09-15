@@ -12,7 +12,7 @@
  * unreachable is the most useful row in the table, and it only exists if the
  * ones who said no are still in it.
  */
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db, quoteReadings, suppliers } from "../db";
 import { db as database, items } from "../db";
 import { num } from "../pricing/landed";
@@ -54,6 +54,8 @@ export interface SupplierComparison {
   deviations: { our_requirement: string; what_they_offer: string; their_reason: string | null }[];
   rejectsTargetPrice: boolean;
   priceObjection: string | null;
+  /** Screening only. Null until asked, or until they answer. */
+  openToNegotiation: boolean | null;
   summaryHe: string | null;
   lines: ComparisonLine[];
   /** Smallest gap across the lines, for ranking. Null when they never priced. */
@@ -89,6 +91,7 @@ export async function buildComparison(projectId: string): Promise<Comparison> {
         deviations: quoteReadings.deviations,
         rejectsTargetPrice: quoteReadings.rejectsTargetPrice,
         priceObjection: quoteReadings.priceObjection,
+        openToNegotiation: quoteReadings.openToNegotiation,
         summaryHe: quoteReadings.summaryHe,
         createdAt: quoteReadings.createdAt,
       })
@@ -298,6 +301,7 @@ export async function buildComparison(projectId: string): Promise<Comparison> {
       deviations: reading.deviations,
       rejectsTargetPrice: reading.rejectsTargetPrice,
       priceObjection: reading.priceObjection,
+      openToNegotiation: reading.openToNegotiation,
       summaryHe: reading.summaryHe,
       lines,
       bestGapPct: gaps.length > 0 ? Math.min(...gaps) : null,
@@ -320,6 +324,18 @@ export async function buildComparison(projectId: string): Promise<Comparison> {
     acceptableGapPct: ACCEPTABLE_GAP_PCT,
     refusals: out.filter((s) => s.rejectsTargetPrice).length,
   };
+}
+
+/**
+ * Screening only. How many distinct suppliers have quoted a price so far -
+ * the number the auto-pause counts against the operator's target.
+ */
+export async function quotesReceivedCount(projectId: string): Promise<number> {
+  const rows = await db
+    .select({ supplierId: quoteReadings.supplierId })
+    .from(quoteReadings)
+    .where(and(eq(quoteReadings.projectId, projectId), eq(quoteReadings.hasPricing, true)));
+  return new Set(rows.map((r) => r.supplierId)).size;
 }
 
 /** A numeric column arrives as a string. */

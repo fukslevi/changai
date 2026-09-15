@@ -85,7 +85,17 @@ export function Comparison({
       {priced.map((supplier) => (
         <div key={supplier.supplierId} className="stack" style={{ gap: 6 }}>
           <div className="spread">
-            <strong>{supplier.company}</strong>
+            <span className="row" style={{ gap: 6 }}>
+              <strong>{supplier.company}</strong>
+              {supplier.openToNegotiation !== null && (
+                <span
+                  className="tag"
+                  style={{ color: supplier.openToNegotiation ? "var(--ok)" : "var(--muted)" }}
+                >
+                  {supplier.openToNegotiation ? "פתוח למו״מ" : "מחיר סופי"}
+                </span>
+              )}
+            </span>
             <span className="muted" style={{ fontSize: 12.5 }}>
               {[
                 supplier.incoterm,

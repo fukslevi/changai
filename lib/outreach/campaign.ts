@@ -11,6 +11,7 @@ import { eq } from "drizzle-orm";
 import { db, projects, supplierLeads } from "../db";
 import { AUTO_APPROVE_SCORE, reenrichMissing, runDiscovery, searchState } from "../discovery/run";
 import { approveAllAbove } from "../actions/discovery";
+import { quotesReceivedCount } from "../quotes/compare";
 import { campaignStatus, prepareCampaign, sendNext } from "./batch";
 import { buildOutreachEmail } from "./template";
 import { getSettings } from "../settings";
@@ -26,6 +27,13 @@ import { claimSlot, mayStartOutreach, releaseSlot } from "./slot";
  * between messages, not how many other factories heard from us today.
  */
 const MAX_PER_RUN = 6;
+
+/**
+ * Screening sends faster and stops sooner: the goal is 3 workable quotes, not
+ * a full shortlist, so getting there in a handful of days beats stretching a
+ * cautious drip over weeks the way a real negotiation needs.
+ */
+const SCREENING_MAX_PER_RUN = 8;
 
 /** How long one cycle may spend searching before it moves on. */
 const DISCOVERY_BUDGET_MS = 70_000;
@@ -61,6 +69,28 @@ export async function runCampaign(
 
   if (project.autonomyTier < 3) {
     return { sent: [], failed: [], remaining: 0, skipped: "not autonomous" };
+  }
+
+  /*
+   * The screening goal is quotes, not reach. Once enough suppliers have
+   * priced it, more outreach only spends the mailbox's daily allowance on
+   * suppliers nobody is going to read a reply from this week - so the
+   * project pauses itself, the same switch the operator uses by hand, and
+   * stays off until they ask for more.
+   */
+  if (project.projectMode === "screening" && project.screeningQuoteTarget !== null) {
+    const received = await quotesReceivedCount(projectId);
+    if (received >= project.screeningQuoteTarget) {
+      if (!project.pausedAt) {
+        await db.update(projects).set({ pausedAt: new Date() }).where(eq(projects.id, projectId));
+      }
+      return {
+        sent: [],
+        failed: [],
+        remaining: 0,
+        skipped: `הגיע ל-${project.screeningQuoteTarget} הצעות מחיר - הושהה אוטומטית`,
+      };
+    }
   }
 
   /*
@@ -179,7 +209,8 @@ export async function runCampaign(
      * budget is shared, so a project that finds room for four sends four and
      * the next project takes whatever survives.
      */
-    const allowedNow = Math.min(MAX_PER_RUN, slot.remaining);
+    const perRunCap = project.projectMode === "screening" ? SCREENING_MAX_PER_RUN : MAX_PER_RUN;
+    const allowedNow = Math.min(perRunCap, slot.remaining);
 
     for (let i = 0; i < allowedNow; i++) {
       if (Date.now() > deadline) break;

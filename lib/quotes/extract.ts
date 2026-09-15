@@ -99,6 +99,13 @@ export const ExtractedQuote = z.object({
   /** Their own words on why, quoted. Null when they gave none. */
   price_objection: z.string().nullable(),
 
+  /**
+   * Only when the message directly states or answers this - never inferred
+   * from a generally friendly or generally curt tone. Null when it is not
+   * addressed at all.
+   */
+  open_to_negotiation: z.enum(["yes", "no"]).nullable(),
+
   /** One line in Hebrew for the comparison table. */
   summary_he: z.string(),
 });
@@ -140,6 +147,12 @@ Set it to null for anything we did not ask to be priced - accessories, spare
 parts, carry bags, samples, tooling. A wrong match is worse than none: it puts
 the price of a $1.50 wheel next to the target for a $35 ladder and reports the
 supplier as 96% under budget.
+
+NEGOTIATION
+Set open_to_negotiation only when the message directly states or answers
+whether the price can move: "yes" for language like "negotiable", "we can
+discuss for larger volume", or a direct yes to being asked; "no" for "final
+price", "fixed price", "non-negotiable". Leave it null otherwise.
 
 Write summary_he in Hebrew, one factual sentence. Short hyphen (-), never long.`;
 

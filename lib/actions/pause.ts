@@ -80,6 +80,37 @@ export async function toggleProjectArchived(
 }
 
 /**
+ * Screening only. Raise the quote goal by three more and switch the project
+ * back on.
+ *
+ * A plain "turn on" would not do it: the auto-pause in runCampaign checks the
+ * same goal, so an unpaused project sitting at 3/3 would be paused again on
+ * the very next cycle without sending anything. Asking for more only makes
+ * sense together with raising what "enough" means.
+ */
+export async function extendScreeningGoal(
+  _prev: PauseState,
+  formData: FormData,
+): Promise<PauseState> {
+  const projectId = String(formData.get("projectId") ?? "");
+  if (!projectId) return { error: "Missing project" };
+
+  const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+  if (!project) return { error: "Project not found" };
+  if (project.projectMode !== "screening") return { error: "לא פרויקט מחיר מטרה" };
+
+  const nextTarget = (project.screeningQuoteTarget ?? 0) + 3;
+  await db
+    .update(projects)
+    .set({ screeningQuoteTarget: nextTarget, pausedAt: null })
+    .where(eq(projects.id, projectId));
+
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/");
+  return { ok: `ממשיך לחפש עד ${nextTarget} הצעות מחיר בסך הכל` };
+}
+
+/**
  * Hand a conversation back to the agent.
  *
  * The counterpart to taking one over. Without it, one manual reply retires the

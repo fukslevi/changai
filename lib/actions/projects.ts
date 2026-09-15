@@ -84,6 +84,10 @@ export async function createProject(
       keywords: parsed.data.keywords,
       status: "draft",
       projectMode,
+      // The operator can ask for more later; 3 is the starting bar because a
+      // fast, wide pass exists to learn whether a price is reachable at all,
+      // not to build a full shortlist.
+      screeningQuoteTarget: projectMode === "screening" ? 3 : null,
       // Chosen on the creation form, so the project starts in the mode the
       // operator wants rather than in the safest one they then have to change.
       autonomyTier: autonomous ? 3 : 1,

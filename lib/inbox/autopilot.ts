@@ -13,7 +13,7 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -21,6 +21,7 @@ import {
   messages,
   openQuestions,
   projects,
+  quoteReadings,
   requirements,
   supplierLeads,
   suppliers,
@@ -165,6 +166,22 @@ async function roundsSoFar(projectId: string, supplierId: string): Promise<numbe
   return Math.max(0, sent.length - 1);
 }
 
+/**
+ * Screening only. True once a supplier has quoted a price and nobody has yet
+ * asked - or they have not yet answered - whether it is open to negotiation.
+ * Self-limiting: once the answer is recorded this returns false on its own,
+ * so the question is asked exactly once per quote.
+ */
+async function needsNegotiationAsk(projectId: string, supplierId: string): Promise<boolean> {
+  const [latest] = await db
+    .select({ hasPricing: quoteReadings.hasPricing, openToNegotiation: quoteReadings.openToNegotiation })
+    .from(quoteReadings)
+    .where(and(eq(quoteReadings.projectId, projectId), eq(quoteReadings.supplierId, supplierId)))
+    .orderBy(desc(quoteReadings.createdAt))
+    .limit(1);
+  return Boolean(latest?.hasPricing) && latest?.openToNegotiation === null;
+}
+
 /** Facts a person has already decided for this project. */
 async function decidedFacts(projectId: string): Promise<string[]> {
   const answered = await db
@@ -234,6 +251,9 @@ export async function planReply(
    */
   const attachments = await attachmentSummary(projectId, supplierId, latest?.attachments ?? []);
 
+  const askNegotiation =
+    mandate?.mode === "screening" && (await needsNegotiationAsk(projectId, supplierId));
+
   const brief = [
     `PRODUCT: ${project.name}`,
     `QUANTITY TIERS: ${project.quantityTiers.join(" / ")}`,
@@ -258,6 +278,10 @@ export async function planReply(
     "",
     "",
     mandate ? mandateBrief(mandate) : "",
+    "",
+    askNegotiation
+      ? 'They just gave a price and nobody has asked whether it is open to negotiation. Add one short question to the reply: "Is this price open to negotiation?" Nothing else about the reply changes.'
+      : "",
     "",
     latest?.analysis
       ? [

@@ -5,7 +5,7 @@
  * unrelated in the sourcing inbox is ever read, and a reply cannot be attached
  * to the wrong project.
  */
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import {
   db,
   files,
@@ -340,9 +340,39 @@ export async function pollInbox(
               deviations: quote.deviations,
               rejectsTargetPrice: quote.rejects_target_price,
               priceObjection: quote.price_objection,
+              hasPricing: quote.has_pricing,
+              openToNegotiation:
+                quote.open_to_negotiation === null ? null : quote.open_to_negotiation === "yes",
               summaryHe: quote.summary_he,
             });
             result.quotesRead++;
+          } else if (quote.open_to_negotiation !== null) {
+            /*
+             * They answered the negotiation question without restating a
+             * price - attach the answer to the quote it was asked about
+             * rather than inserting a bare row with no price of its own,
+             * which would otherwise outrank the priced reading as "latest".
+             */
+            const [lastPriced] = await db
+              .select({ id: quoteReadings.id })
+              .from(quoteReadings)
+              .where(
+                and(
+                  eq(quoteReadings.projectId, projectId),
+                  eq(quoteReadings.supplierId, thread.supplierId),
+                  eq(quoteReadings.hasPricing, true),
+                ),
+              )
+              .orderBy(desc(quoteReadings.createdAt))
+              .limit(1);
+
+            if (lastPriced) {
+              await db
+                .update(quoteReadings)
+                .set({ openToNegotiation: quote.open_to_negotiation === "yes" })
+                .where(eq(quoteReadings.id, lastPriced.id));
+              result.quotesRead++;
+            }
           }
         } catch (err) {
           result.errors.push(

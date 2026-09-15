@@ -16,8 +16,9 @@ import { Autostart } from "./Autostart";
 import { Comparison } from "./Comparison";
 import { TargetPrice } from "./TargetPrice";
 import { PriceAudit } from "./PriceAudit";
+import { ScreeningGoal } from "./ScreeningGoal";
 import { revisionsFor } from "@/lib/pricing/revise";
-import { buildComparison } from "@/lib/quotes/compare";
+import { buildComparison, quotesReceivedCount } from "@/lib/quotes/compare";
 import { Autonomy } from "./Autonomy";
 import { Pause } from "./Pause";
 import { NextUp } from "./NextUp";
@@ -72,6 +73,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const pricing = await projectPricing(id);
   const mandate = await loadMandate(id);
   const comparison = await buildComparison(id);
+  const quotesReceived =
+    project.projectMode === "screening" ? await quotesReceivedCount(id) : 0;
   const revisions = await revisionsFor(id);
   const slot = await slotState();
   const outreachTurn = await mayStartOutreach(id);
@@ -199,6 +202,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
               title="בדיקת מחיר מטרה מהירה - לא RFQ מלא. אין ספציפיקציה, בידול או תעודות בתהליך הזה."
             >
               מחיר מטרה
+              {project.screeningQuoteTarget !== null &&
+                ` · ${quotesReceived}/${project.screeningQuoteTarget}`}
             </span>
           )}
           {project.archivedAt ? (
@@ -284,6 +289,16 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             pausedAt={project.pausedAt}
             archivedAt={project.archivedAt}
           />
+          {project.projectMode === "screening" &&
+            project.pausedAt &&
+            project.screeningQuoteTarget !== null &&
+            quotesReceived >= project.screeningQuoteTarget && (
+              <ScreeningGoal
+                projectId={project.id}
+                quotesReceived={quotesReceived}
+                quotesTarget={project.screeningQuoteTarget}
+              />
+            )}
         </div>
       </div>
 

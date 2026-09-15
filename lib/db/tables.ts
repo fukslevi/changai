@@ -63,6 +63,13 @@ export const projects = pgTable("projects", {
    * with the same suppliers and the same thread, not a new project.
    */
   projectMode: text("project_mode").$type<"screening" | "production">().notNull().default("production"),
+  /**
+   * Screening only. How many priced replies we are trying to collect before
+   * pausing for a person to look - 3 by default, more if the operator asks
+   * to keep going. Null on a production project, which has no such ceiling:
+   * it runs until every approved supplier has been written to.
+   */
+  screeningQuoteTarget: integer("screening_quote_target"),
   /** Read from the RFQ's own pricing table — never defaulted. See schema.ts. */
   quantityTiers: jsonb("quantity_tiers").$type<number[]>().notNull().default([]),
   currency: text("currency").notNull().default("USD"),
@@ -683,6 +690,17 @@ export const quoteReadings = pgTable(
     rejectsTargetPrice: boolean("rejects_target_price").notNull().default(false),
     priceObjection: text("price_objection"),
     summaryHe: text("summary_he"),
+
+    /** True when `lines` carries at least one stated unit price. Kept as its
+     * own column so "how many suppliers have quoted" is a plain count, not a
+     * scan of jsonb on every check. */
+    hasPricing: boolean("has_pricing").notNull().default(false),
+    /**
+     * Screening only. Null until asked, and null until they answer - never
+     * inferred from tone. Set true/false only when the supplier's own words
+     * address it directly.
+     */
+    openToNegotiation: boolean("open_to_negotiation"),
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
