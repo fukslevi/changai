@@ -65,7 +65,7 @@ export async function scoreCandidates(
   ].join("\n");
 
   const stream = client.messages.stream({
-    model: "claude-opus-5",
+    model: "claude-sonnet-5",
     max_tokens: 16000,
     output_config: { effort: "medium", format: zodOutputFormat(Scored) },
     system: [{ type: "text", cache_control: { type: "ephemeral" }, text: `You screen candidate suppliers for a consumer-products company sourcing from China.

@@ -41,7 +41,7 @@ export async function generateAngles(
   const client = new Anthropic();
 
   const stream = client.messages.stream({
-    model: "claude-opus-5",
+    model: "claude-sonnet-5",
     max_tokens: 4000,
     output_config: { effort: "medium", format: zodOutputFormat(Angles) },
     system: [{ type: "text", cache_control: { type: "ephemeral" }, text: `You write web search queries that surface Chinese manufacturers of a specific product.

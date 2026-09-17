@@ -116,7 +116,7 @@ export async function analyseReply(
   ].join("\n");
 
   const stream = new Anthropic().messages.stream({
-    model: "claude-opus-5",
+    model: "claude-sonnet-5",
     max_tokens: 8000,
     output_config: { effort: "medium", format: zodOutputFormat(ReplyAnalysis) },
     system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],

@@ -193,7 +193,7 @@ export async function extractQuote(
   ].join("\n");
 
   const stream = new Anthropic().messages.stream({
-    model: "claude-opus-5",
+    model: "claude-sonnet-5",
     max_tokens: 12_000,
     output_config: { effort: "medium", format: zodOutputFormat(ExtractedQuote) },
     system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
