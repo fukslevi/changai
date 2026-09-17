@@ -175,7 +175,7 @@ async function writeVerdict(
     model: "claude-opus-5",
     max_tokens: 2000,
     output_config: { effort: "medium", format: zodOutputFormat(Verdict) },
-    system: `You are a sourcing analyst. You are given a product's economics and the
+    system: [{ type: "text", cache_control: { type: "ephemeral" }, text: `You are a sourcing analyst. You are given a product's economics and the
 prices factories have actually quoted. Say plainly whether the target price is
 achievable, and if it is not, say which assumption is the one that has to give.
 
@@ -193,7 +193,7 @@ Rules:
 - Name the specific change that would make it work - a retail price, an ROI, or
   a factory price - with the number.
 - Hebrew. Two to five sentences. Short hyphens (-), never long dashes.
-- No preamble, no restating the inputs. Start with the finding.`,
+- No preamble, no restating the inputs. Start with the finding.` }],
     messages: [{ role: "user", content: facts }],
   });
 

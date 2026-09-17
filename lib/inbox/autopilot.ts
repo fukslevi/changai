@@ -298,7 +298,7 @@ export async function planReply(
     model: "claude-opus-5",
     max_tokens: 8000,
     output_config: { effort: "medium", format: zodOutputFormat(ReplyPlan) },
-    system: SYSTEM,
+    system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
     messages: [
       {
         role: "user",

@@ -156,7 +156,7 @@ export async function draftReply({ projectId, supplierId }: DraftContext): Promi
     model: "claude-opus-5",
     max_tokens: 4000,
     output_config: { effort: "medium" },
-    system: SYSTEM,
+    system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
     messages: [
       {
         role: "user",

@@ -44,7 +44,7 @@ export async function generateAngles(
     model: "claude-opus-5",
     max_tokens: 4000,
     output_config: { effort: "medium", format: zodOutputFormat(Angles) },
-    system: `You write web search queries that surface Chinese manufacturers of a specific product.
+    system: [{ type: "text", cache_control: { type: "ephemeral" }, text: `You write web search queries that surface Chinese manufacturers of a specific product.
 
 The buyer has already searched the obvious terms and got page after page of
 retailers and Amazon listings. Your queries must reach the factories those
@@ -76,7 +76,7 @@ If a list of queries already tried is given, none of yours may repeat them or be
 a trivial rewording of one. Go somewhere else: a different material, a different
 sub-assembly, a different manufacturing cluster, the term a different national
 market uses. Running out of genuinely new angles is a real answer - returning
-five good ones is better than padding to fourteen with variations.`,
+five good ones is better than padding to fourteen with variations.` }],
     messages: [
       {
         role: "user",

@@ -216,7 +216,7 @@ async function draftAsk(
     model: "claude-opus-5",
     max_tokens: 2000,
     output_config: { effort: "medium", format: zodOutputFormat(Draft) },
-    system: SYSTEM,
+    system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
     messages: [{ role: "user", content: brief }],
   });
 

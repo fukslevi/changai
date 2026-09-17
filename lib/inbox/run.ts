@@ -342,11 +342,11 @@ export async function pollInbox(
               priceObjection: quote.price_objection,
               hasPricing: quote.has_pricing,
               openToNegotiation:
-                quote.open_to_negotiation === null ? null : quote.open_to_negotiation === "yes",
+                quote.open_to_negotiation === "unstated" ? null : quote.open_to_negotiation === "yes",
               summaryHe: quote.summary_he,
             });
             result.quotesRead++;
-          } else if (quote.open_to_negotiation !== null) {
+          } else if (quote.open_to_negotiation !== "unstated") {
             /*
              * They answered the negotiation question without restating a
              * price - attach the answer to the quote it was asked about

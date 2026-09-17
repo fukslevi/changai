@@ -100,11 +100,17 @@ export const ExtractedQuote = z.object({
   price_objection: z.string().nullable(),
 
   /**
-   * Only when the message directly states or answers this - never inferred
-   * from a generally friendly or generally curt tone. Null when it is not
-   * addressed at all.
+   * "unstated" rather than nullable, on purpose - the API refuses a schema
+   * with more than sixteen union-typed parameters, and this one was already
+   * at the limit (see matches_rfq_item above). One more `.nullable()` here
+   * made seventeen, and every extraction failed silently into the errors
+   * array nobody reads - the same failure this schema was already carrying a
+   * warning about.
+   *
+   * Only "yes" or "no" when the message directly states or answers this -
+   * never inferred from a generally friendly or generally curt tone.
    */
-  open_to_negotiation: z.enum(["yes", "no"]).nullable(),
+  open_to_negotiation: z.enum(["yes", "no", "unstated"]),
 
   /** One line in Hebrew for the comparison table. */
   summary_he: z.string(),
@@ -149,10 +155,11 @@ the price of a $1.50 wheel next to the target for a $35 ladder and reports the
 supplier as 96% under budget.
 
 NEGOTIATION
-Set open_to_negotiation only when the message directly states or answers
-whether the price can move: "yes" for language like "negotiable", "we can
-discuss for larger volume", or a direct yes to being asked; "no" for "final
-price", "fixed price", "non-negotiable". Leave it null otherwise.
+Set open_to_negotiation to "yes" or "no" only when the message directly
+states or answers whether the price can move: "yes" for language like
+"negotiable", "we can discuss for larger volume", or a direct yes to being
+asked; "no" for "final price", "fixed price", "non-negotiable". Otherwise
+"unstated".
 
 Write summary_he in Hebrew, one factual sentence. Short hyphen (-), never long.`;
 
@@ -189,7 +196,7 @@ export async function extractQuote(
     model: "claude-opus-5",
     max_tokens: 12_000,
     output_config: { effort: "medium", format: zodOutputFormat(ExtractedQuote) },
-    system: SYSTEM,
+    system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
     messages: [
       {
         role: "user",

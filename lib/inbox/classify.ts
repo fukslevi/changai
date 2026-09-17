@@ -119,7 +119,7 @@ export async function analyseReply(
     model: "claude-opus-5",
     max_tokens: 8000,
     output_config: { effort: "medium", format: zodOutputFormat(ReplyAnalysis) },
-    system: SYSTEM,
+    system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
     messages: [{ role: "user", content: brief }],
   });
 

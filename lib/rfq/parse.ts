@@ -82,7 +82,7 @@ export async function parseRfq({ filename, mimeType, content }: ParseOptions) {
       effort: "high",
       format: zodOutputFormat(RfqExtraction),
     },
-    system: SYSTEM,
+    system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
     messages: [
       {
         role: "user",

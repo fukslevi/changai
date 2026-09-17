@@ -68,7 +68,7 @@ export async function scoreCandidates(
     model: "claude-opus-5",
     max_tokens: 16000,
     output_config: { effort: "medium", format: zodOutputFormat(Scored) },
-    system: `You screen candidate suppliers for a consumer-products company sourcing from China.
+    system: [{ type: "text", cache_control: { type: "ephemeral" }, text: `You screen candidate suppliers for a consumer-products company sourcing from China.
 
 Score each candidate 0-100 on how likely it is to MANUFACTURE the product described.
 
@@ -87,7 +87,7 @@ product name.
 The rationale must cite something concrete from that specific site. "Looks
 relevant" is useless to the person deciding whether to email them.
 
-Return one entry per candidate, using the exact domain given.`,
+Return one entry per candidate, using the exact domain given.` }],
     messages: [{ role: "user", content: brief }],
   });
 
