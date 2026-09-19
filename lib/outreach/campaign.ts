@@ -17,7 +17,7 @@ import { buildOutreachEmail } from "./template";
 import { getSettings } from "../settings";
 import { items, requirements } from "../db";
 import { asc } from "drizzle-orm";
-import { claimSlot, mayStartOutreach, releaseSlot } from "./slot";
+import { acquireSendLock, claimSlot, mayStartOutreach, releaseSendLock, releaseSlot } from "./slot";
 
 /**
  * Enough to make progress every couple of hours, few enough that a mistake is
@@ -197,42 +197,57 @@ export async function runCampaign(
   }
 
   if (slot?.may) {
-    await claimSlot(projectId);
-
-    // Fails loudly here rather than half way through a list: a missing
-    // walk-away or an unset mailbox should stop the run, not produce three
-    // sends and a crash on the fourth.
-    const prepared = await prepareCampaign(projectId);
-
     /*
-     * Bounded by what is left of the day, not by a private allowance. The
-     * budget is shared, so a project that finds room for four sends four and
-     * the next project takes whatever survives.
+     * Only one sender at a time, whichever process asked first. The Vercel
+     * cron and a locally-run `watch.ts --send` both reach this point through
+     * completely separate processes with no other channel between them - if
+     * both ever overlap, this is what stops the second one from sending
+     * anything rather than the two of them doubling each other's quota.
      */
-    const perRunCap = project.projectMode === "screening" ? SCREENING_MAX_PER_RUN : MAX_PER_RUN;
-    const allowedNow = Math.min(perRunCap, slot.remaining);
+    if (!(await acquireSendLock())) {
+      run.skipped = "שליחה אחרת כבר רצה כרגע - מדלג";
+    } else {
+      try {
+        await claimSlot(projectId);
 
-    for (let i = 0; i < allowedNow; i++) {
-      if (Date.now() > deadline) break;
+        // Fails loudly here rather than half way through a list: a missing
+        // walk-away or an unset mailbox should stop the run, not produce
+        // three sends and a crash on the fourth.
+        const prepared = await prepareCampaign(projectId);
 
-      const outcome = await sendNext(projectId, prepared);
-      if (!outcome) break;
+        /*
+         * Bounded by what is left of the day, not by a private allowance.
+         * The budget is shared, so a project that finds room for four sends
+         * four and the next project takes whatever survives.
+         */
+        const perRunCap = project.projectMode === "screening" ? SCREENING_MAX_PER_RUN : MAX_PER_RUN;
+        const allowedNow = Math.min(perRunCap, slot.remaining);
 
-      if (outcome.ok) {
-        run.sent.push(outcome.recipient.companyName);
-      } else {
-        run.failed.push({
-          company: outcome.recipient.companyName,
-          error: outcome.error ?? "",
-        });
+        for (let i = 0; i < allowedNow; i++) {
+          if (Date.now() > deadline) break;
+
+          const outcome = await sendNext(projectId, prepared);
+          if (!outcome) break;
+
+          if (outcome.ok) {
+            run.sent.push(outcome.recipient.companyName);
+          } else {
+            run.failed.push({
+              company: outcome.recipient.companyName,
+              error: outcome.error ?? "",
+            });
+          }
+
+          run.remaining = outcome.remaining;
+          if (outcome.remaining === 0) {
+            await releaseSlot(projectId);
+            break;
+          }
+          if (i < allowedNow - 1) await new Promise((resolve) => setTimeout(resolve, pauseMs()));
+        }
+      } finally {
+        await releaseSendLock();
       }
-
-      run.remaining = outcome.remaining;
-      if (outcome.remaining === 0) {
-        await releaseSlot(projectId);
-        break;
-      }
-      if (i < allowedNow - 1) await new Promise((resolve) => setTimeout(resolve, pauseMs()));
     }
   }
 

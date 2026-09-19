@@ -264,6 +264,43 @@ export async function mayStartOutreach(projectId: string): Promise<SlotDecision>
   return { may: true, remaining };
 }
 
+/**
+ * Longer than any single project's send loop should ever take (MAX_PER_RUN
+ * sends at up to 20s apart), short enough that a crashed process releases
+ * the lock on its own well within a day.
+ */
+const SEND_LOCK_TTL_SECONDS = 300;
+
+/**
+ * The only thing standing between "one project sends at a time" and two
+ * processes sending at once. The Vercel cron and a locally-run
+ * `watch.ts --send` both call into the same sending code with no other
+ * coordination between them - this is what makes that safe.
+ *
+ * A single atomic UPDATE, not a read then a write: two callers racing on the
+ * same row serialise at the database, and only one of them sees a row
+ * returned. Self-expiring via the TTL rather than requiring every caller to
+ * remember to release it on a crash.
+ */
+export async function acquireSendLock(): Promise<boolean> {
+  const rows = await db
+    .update(settings)
+    .set({ sendingLockedAt: new Date() })
+    .where(
+      and(
+        eq(settings.id, "default"),
+        sql`(${settings.sendingLockedAt} is null or ${settings.sendingLockedAt} < now() - interval '${sql.raw(String(SEND_LOCK_TTL_SECONDS))} seconds')`,
+      ),
+    )
+    .returning({ id: settings.id });
+
+  return rows.length > 0;
+}
+
+export async function releaseSendLock(): Promise<void> {
+  await db.update(settings).set({ sendingLockedAt: null }).where(eq(settings.id, "default"));
+}
+
 /** Recorded for the history, not consulted for permission any more. */
 export async function claimSlot(projectId: string): Promise<void> {
   await db

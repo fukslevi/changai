@@ -258,6 +258,21 @@ export const settings = pgTable("settings", {
    */
   maxColdPerDay: integer("max_cold_per_day").notNull().default(30),
 
+  /**
+   * A mutex, not a status field.
+   *
+   * There are two independent ways to trigger a send - the Vercel cron and
+   * the local `watch.ts --send` loop - and nothing before this stopped both
+   * from running at once against the same database. That is how a cap of 30
+   * became 50 in under two minutes: two processes each read "remaining"
+   * before either had sent anything, and both proceeded. Held for the
+   * duration of one project's send loop, not the whole cron run, so it
+   * blocks a genuine overlap without serialising unrelated projects that
+   * would never have collided anyway. Self-expiring, so a crashed process
+   * cannot wedge sending off forever.
+   */
+  sendingLockedAt: timestamp("sending_locked_at", { withTimezone: true }),
+
   /*
    * Product intake sheet.
    *
