@@ -112,7 +112,7 @@ export function UploadRfq({ projectId, hasRfq }: { projectId: string; hasRfq: bo
       <input type="hidden" name="projectId" value={projectId} />
       <div>
         <label htmlFor="rfq">{hasRfq ? "Replace RFQ" : "Upload RFQ"}</label>
-        <input id="rfq" name="rfq" type="file" accept=".pdf,.docx,.pptx" required />
+        <input id="rfq" name="rfq" type="file" accept=".pdf,.docx" required />
         <p className="hint">
           PDF, PPTX or DOCX up to 15MB. Must include dimensions, materials and product photos —
           specifications, target prices and quantity tiers are all read from this file.

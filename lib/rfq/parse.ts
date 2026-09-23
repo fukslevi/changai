@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { RfqExtraction } from "./extraction-schema";
+import { rfqDocumentBlocks } from "./document";
 
 /**
  * Every rule below was written against a real RFQ that broke an earlier
@@ -8,7 +9,7 @@ import { RfqExtraction } from "./extraction-schema";
  */
 const SYSTEM = `You read sourcing RFQ documents for a consumer-products company
 and extract them into structured data. The documents are slide decks or Word
-files exported to PDF, with a consistent section structure but requirements
+files supplied as PDF or extracted Word HTML with embedded images, with requirements
 written as prose bullets.
 
 QUANTITY TIERS
@@ -61,11 +62,7 @@ export async function parseRfq({ filename, mimeType, content }: ParseOptions) {
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new Error("ANTHROPIC_API_KEY is not set — add it to .env");
   }
-  if (mimeType !== "application/pdf") {
-    throw new Error(
-      `Only PDF is supported right now (got ${mimeType}). Export the deck to PDF and re-upload.`,
-    );
-  }
+  const documentBlocks = await rfqDocumentBlocks({ filename, mimeType, content });
 
   const client = new Anthropic();
 
@@ -87,15 +84,7 @@ export async function parseRfq({ filename, mimeType, content }: ParseOptions) {
       {
         role: "user",
         content: [
-          {
-            type: "document",
-            source: {
-              type: "base64",
-              media_type: "application/pdf",
-              data: content.toString("base64"),
-            },
-            title: filename,
-          },
+          ...documentBlocks,
           {
             type: "text",
             text: `Extract this RFQ. Work through it section by section and read the

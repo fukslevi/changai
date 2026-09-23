@@ -109,7 +109,7 @@ export default function NewProjectPage() {
         ) : (
           <div>
             <label htmlFor="rfq">מסמך ה-RFQ</label>
-            <input id="rfq" name="rfq" type="file" accept=".pdf,.docx,.pptx" />
+            <input id="rfq" name="rfq" type="file" accept=".pdf,.docx" />
             <Guide k="rfqFile" />
           </div>
         )}
